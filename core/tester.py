@@ -13,6 +13,41 @@ def get_first_nonempty(*args):
             return x
     return None
 
+def clean_domain_from_server_for_testing(domain, server):
+    """
+    USER CLARIFICATION: Remove server part dari SNI/Host untuk testing
+    
+    Examples:
+    1. server="tod.com", domain="tod.com.do-v3.bhm69.site" → return "do-v3.bhm69.site" (remove prefix)
+    2. server="example.com", domain="sg.example.com" → return "sg" (remove suffix)
+    3. server="example.com", domain="example.com" → return "example.com" (sama persis, TETAP TEST)
+    4. server="example.com", domain="different.net" → return "different.net" (berbeda total)
+    """
+    if not domain or not server:
+        return domain
+        
+    # Jika sama persis, tetap test
+    if domain == server:
+        print(f"🔧 Same domain {domain} - WILL TEST")
+        return domain
+        
+    # Remove server part dari SNI/Host
+    if server in domain and domain != server:
+        # Case 1: server is prefix - REMOVE server part, keep remaining
+        if domain.startswith(server + '.'):
+            remaining = domain[len(server + '.'):]
+            print(f"🔧 Remove server prefix: {domain} → {remaining} (removed {server})")
+            return remaining
+        # Case 2: server is suffix - REMOVE server part, keep prefix  
+        elif domain.endswith('.' + server):
+            prefix = domain[:-len('.' + server)]
+            print(f"🔧 Remove server suffix: {domain} → {prefix} (removed {server})")
+            return prefix
+    
+    # Berbeda total, keep as-is
+    print(f"🔧 Domain different from server: {domain} (keep as-is)")
+    return domain
+
 def get_test_target(account):
     # 1. Coba IP dari path (support SS dan WS path untuk semua protokol)
     path_str = account.get("_ss_path") or account.get("_ws_path") or ""
@@ -20,26 +55,41 @@ def get_test_target(account):
     if target_ip:
         return target_ip, target_port or 443, "path"
 
-    # 2. Fallback ke host/sni/server_name/server
+    # 2. Fallback ke host/sni/server_name/server dengan domain cleaning
+    server = account.get("server")
+    
     # Ambil host dari WebSocket headers
     host = None
     if "host" in account:
         host = account["host"]
     elif "transport" in account and isinstance(account["transport"], dict):
         host = account["transport"].get("headers", {}).get("Host")
+    
     # Ambil sni/server_name dari TLS
     sni = None
     if "tls" in account and isinstance(account["tls"], dict):
         sni = account["tls"].get("sni") or account["tls"].get("server_name")
 
-    server = account.get("server")
-    # Jika host/sni/server_name == server, tetap test (tidak hapus)
     candidates = []
-    # Jangan ulangi value
-    if host and host != server:
-        candidates.append(("host", host))
-    if sni and sni != server and sni != host:
-        candidates.append(("sni", sni))
+    
+    # Apply domain cleaning untuk host dan sni
+    if host:
+        cleaned_host = clean_domain_from_server_for_testing(host, server)
+        if cleaned_host and cleaned_host != server:
+            candidates.append(("host", cleaned_host))
+        elif cleaned_host == server:
+            # Jika sama dengan server setelah cleaning, tetap test sebagai host
+            candidates.append(("host", cleaned_host))
+    
+    if sni:
+        cleaned_sni = clean_domain_from_server_for_testing(sni, server)
+        if cleaned_sni and cleaned_sni != server and cleaned_sni != host:
+            candidates.append(("sni", cleaned_sni))
+        elif cleaned_sni == server:
+            # Jika sama dengan server setelah cleaning, tetap test sebagai sni
+            candidates.append(("sni", cleaned_sni))
+    
+    # Server sebagai fallback terakhir
     if server:
         candidates.append(("server", server))
 
