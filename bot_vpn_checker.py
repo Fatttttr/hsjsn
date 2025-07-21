@@ -89,8 +89,8 @@ class VPNBotChecker:
             logger.info("Loading all JSON config files from GitHub repository...")
             
             # Get list of JSON files from repository
-            json_files = self.github_client.list_files_in_repo()
-            json_files = [f for f in json_files if f.endswith('.json')]
+            files = self.github_client.list_files_in_repo()
+            json_files = [f['name'] for f in files if f.get('name', '').endswith('.json')]
             
             if not json_files:
                 logger.warning("No JSON files found in repository")
