@@ -18,6 +18,14 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 
+# Import keep-alive modules for Render.com
+try:
+    from keep_alive import start_keep_alive, stop_keep_alive
+    from health_server import start_health_server, stop_health_server
+    KEEP_ALIVE_AVAILABLE = True
+except ImportError:
+    KEEP_ALIVE_AVAILABLE = False
+
 import requests
 from telebot import TeleBot
 from twilio.rest import Client as TwilioClient
@@ -308,6 +316,12 @@ class VPNBotChecker:
         """Start the scheduled checking"""
         logger.info(f"Starting VPN Bot Checker with {self.config.check_interval_minutes} minute intervals")
         
+        # Start keep-alive services for Render.com
+        if KEEP_ALIVE_AVAILABLE and os.getenv('RENDER_EXTERNAL_URL'):
+            logger.info("Starting keep-alive services for Render.com")
+            start_health_server(port=int(os.getenv('PORT', '8080')))
+            start_keep_alive(ping_interval=600)  # 10 minutes
+        
         # Schedule the check
         schedule.every(self.config.check_interval_minutes).minutes.do(
             lambda: asyncio.run(self.run_check())
@@ -319,9 +333,16 @@ class VPNBotChecker:
         asyncio.run(self.run_check())
         
         # Keep running scheduled checks
-        while True:
-            schedule.run_pending()
-            time.sleep(30)  # Check every 30 seconds for scheduled tasks
+        try:
+            while True:
+                schedule.run_pending()
+                time.sleep(30)  # Check every 30 seconds for scheduled tasks
+        except KeyboardInterrupt:
+            logger.info("Shutting down bot...")
+            if KEEP_ALIVE_AVAILABLE:
+                stop_keep_alive()
+                stop_health_server()
+            raise
 
 def load_bot_config() -> BotConfig:
     """Load bot configuration from file or environment variables"""

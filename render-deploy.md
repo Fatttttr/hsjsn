@@ -74,19 +74,35 @@ WHATSAPP_TO=whatsapp:+6281234567890
 3. **Check logs** untuk verify deployment
 4. **Bot starts running!**
 
-## 😴 Handling Sleep Mode
+## 😴 Handling Sleep Mode (3 Solutions)
 
-### **How Sleep Works:**
+### **Solution 1: Accept Sleep (Simplest)**
 - 🤖 **Bot runs normally** saat active
 - 😴 **Sleeps after 15min** no HTTP requests
 - ⏰ **Auto-wakes** when scheduled task triggers
 - 🔄 **Continues monitoring** seamlessly
+- ✅ **Works fine untuk 30min+ intervals**
 
-### **Why It Still Works:**
-- ✅ **Scheduled tasks wake the bot**
-- ✅ **30min intervals = bot wakes every 30min**
-- ✅ **Notifications still sent**
-- ✅ **Monitoring continues 24/7**
+### **Solution 2: Self-Ping Keep-Alive (Built-in)**
+Bot automatically enabled jika deploy ke Render:
+- 🔄 **Bot pings itself every 10 minutes**
+- 🌐 **Health endpoint** available at `/health`
+- ⚡ **Prevents sleep completely**
+- 📊 **Zero additional setup required**
+
+### **Solution 3: External Ping Services (Recommended)**
+Use free monitoring services:
+- 📡 **UptimeRobot** (free, 5min intervals) 
+- 🕐 **Cron-job.org** (free, 1min intervals)
+- 📈 **Pingdom** (free, 1min intervals)
+- ✅ **Professional monitoring + keep awake**
+- 🎁 **Bonus: uptime alerts & statistics**
+
+#### **Quick UptimeRobot Setup:**
+1. Sign up at https://uptimerobot.com/ (free)
+2. Add monitor: `https://your-app.onrender.com/health`
+3. Interval: 5 minutes
+4. ✅ App stays awake + professional monitoring!
 
 ## 📊 Performance Comparison
 
