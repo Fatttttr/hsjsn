@@ -105,7 +105,7 @@ function getSelectedConfigSource() {
     return selectedRadio ? selectedRadio.value : 'template';
 }
 
-// Load configuration based on selected source
+// USER REQUEST: Enhanced loadConfigurationBasedOnSource dengan GitHub file selection
 async function loadConfigurationBasedOnSource() {
     const source = getSelectedConfigSource();
     console.log(`🔧 DEBUG: loadConfigurationBasedOnSource called, source=${source}`);
@@ -120,7 +120,7 @@ async function loadConfigurationBasedOnSource() {
             
             if (data.success) {
                 console.log('✅ DEBUG: Template configuration loaded automatically');
-                return { success: true, source: 'template' };
+                return { success: true, source: 'template', account_count: data.account_count };
             } else {
                 throw new Error(data.message);
             }
@@ -130,9 +130,41 @@ async function loadConfigurationBasedOnSource() {
             return { success: false, source: 'template', error: error.message };
         }
     } else {
-        // Use GitHub configuration (already saved)
-        console.log('🐙 DEBUG: Using saved GitHub configuration');
-        return { success: true, source: 'github' };
+        // Use GitHub configuration
+        console.log('🐙 DEBUG: Loading GitHub configuration...');
+        
+        const selectedFile = document.getElementById('github-files').value;
+        if (!selectedFile) {
+            showToast('GitHub File Required', 'Please select a GitHub file from the dropdown', 'warning');
+            return { success: false, source: 'github', error: 'No file selected' };
+        }
+        
+        try {
+            const response = await fetch('/api/load-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    source: 'github',
+                    file_path: selectedFile
+                }),
+            });
+            
+            const data = await response.json();
+            console.log('🐙 DEBUG: GitHub config response:', data);
+            
+            if (data.success) {
+                console.log('✅ DEBUG: GitHub configuration loaded successfully');
+                return { success: true, source: 'github', account_count: data.account_count };
+            } else {
+                throw new Error(data.message);
+            }
+        } catch (error) {
+            console.error('❌ DEBUG: GitHub config load error:', error);
+            showToast('GitHub Error', 'Failed to load GitHub configuration', 'error');
+            return { success: false, source: 'github', error: error.message };
+        }
     }
 }
 
@@ -370,8 +402,8 @@ async function setupGitHub() {
     updateStatus('Configuring GitHub...', 'info');
     
     try {
-        // USER REQUEST: Save GitHub config to database
-        const response = await fetch('/api/save-github-config', {
+        // USER REQUEST: Validate GitHub configuration and auto-load files
+        const validateResponse = await fetch('/api/validate-github-config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -379,28 +411,74 @@ async function setupGitHub() {
             body: JSON.stringify({ token, owner, repo }),
         });
         
-        const data = await response.json();
+        const validateData = await validateResponse.json();
         
-        if (data.success) {
-            updateGitHubStatus('Configured');
-            showToast('GitHub Saved', 'GitHub configuration saved successfully!', 'success');
-            updateStatus('GitHub configuration saved', 'success');
+        if (validateData.success && validateData.can_show_dropdown) {
+            // GitHub configuration is valid, now save it
+            const response = await fetch('/api/save-github-config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ token, owner, repo }),
+            });
             
-            // USER REQUEST: No manual file selection, will auto-detect saat start testing
-            showSetupStatus('GitHub configuration saved. Start testing to automatically use GitHub config.', 'success');
+            const data = await response.json();
+            
+            if (data.success) {
+                updateGitHubStatus('Configured');
+                showToast('GitHub Configured', 'GitHub configuration saved and validated!', 'success');
+                updateStatus('GitHub configuration saved', 'success');
+                
+                // USER REQUEST: Auto-show dropdown dengan files yang sudah dimuat
+                if (validateData.files && validateData.files.length > 0) {
+                    showGitHubDropdown(validateData.files);
+                    showSetupStatus(`GitHub configured. Found ${validateData.file_count} JSON files. Select a file to start testing.`, 'success');
+                } else {
+                    showSetupStatus('GitHub configured successfully. Start testing to automatically use GitHub config.', 'success');
+                }
+            } else {
+                updateGitHubStatus('Error');
+                showToast('Save Failed', data.message, 'error');
+                updateStatus('GitHub save failed', 'error');
+            }
         } else {
             updateGitHubStatus('Error');
-            showToast('Save Failed', data.message, 'error');
-            updateStatus('GitHub save failed', 'error');
+            showToast('GitHub Validation Failed', validateData.message, 'error');
+            updateStatus('GitHub validation failed', 'error');
+            showSetupStatus(`GitHub validation failed: ${validateData.message}`, 'error');
         }
     } catch (error) {
         console.error('GitHub setup error:', error);
-        updateGitHubStatus('error');
+        updateGitHubStatus('Error');
         showToast('Network Error', 'Failed to connect to server', 'error');
         updateStatus('Network error', 'error');
+        showSetupStatus('Network error occurred', 'error');
     } finally {
         setButtonLoading('setup-github-btn', false);
     }
+}
+
+// USER REQUEST: Show GitHub dropdown dengan files
+function showGitHubDropdown(files) {
+    const fileSelection = document.getElementById('github-file-selection');
+    const select = document.getElementById('github-files');
+    
+    if (!fileSelection || !select) return;
+    
+    // Populate dropdown dengan files dari validasi
+    select.innerHTML = '<option value="">Select a configuration file...</option>';
+    
+    files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.path;
+        option.textContent = file.name;
+        select.appendChild(option);
+    });
+    
+    // Show dropdown
+    fileSelection.style.display = 'block';
+    console.log(`✅ GitHub dropdown shown with ${files.length} files`);
 }
 
 // Update GitHub status badge
@@ -409,14 +487,17 @@ function updateGitHubStatus(status) {
     
     badge.classList.remove('success', 'error');
     
-    if (status === 'success') {
+    if (status === 'Configured') {
         badge.textContent = 'Configured';
         badge.classList.add('success');
-    } else if (status === 'error') {
+        isGitHubConfigured = true;
+    } else if (status === 'Error') {
         badge.textContent = 'Error';
         badge.classList.add('error');
+        isGitHubConfigured = false;
     } else {
         badge.textContent = 'Not Configured';
+        isGitHubConfigured = false;
     }
 }
 
@@ -450,7 +531,7 @@ async function loadGitHubFiles() {
     }
 }
 
-// USER REQUEST: Load saved GitHub configuration from database with auto-fill
+// USER REQUEST: Load saved GitHub configuration from database with auto-fill dan auto-load files
 async function loadSavedGitHubConfig() {
     try {
         const response = await fetch('/api/get-github-config');
@@ -471,6 +552,9 @@ async function loadSavedGitHubConfig() {
             if (data.has_token) {
                 document.getElementById('github-token').placeholder = 'Token saved (enter new token to update)';
                 updateGitHubStatus('Configured');
+                
+                // USER REQUEST: Auto-load GitHub files untuk dropdown jika config sudah ada
+                await autoLoadGitHubFiles();
             } else {
                 updateGitHubStatus('Token Required');
             }
@@ -481,6 +565,24 @@ async function loadSavedGitHubConfig() {
     } catch (error) {
         console.error('Error loading GitHub config:', error);
         updateGitHubStatus('Error');
+    }
+}
+
+// USER REQUEST: Auto-load GitHub files jika konfigurasi sudah ada
+async function autoLoadGitHubFiles() {
+    try {
+        const response = await fetch('/api/list-github-files');
+        const data = await response.json();
+        
+        if (data.success && data.files) {
+            showGitHubDropdown(data.files);
+            showSetupStatus(`GitHub configured. Found ${data.total} JSON files. Select a file to start testing.`, 'success');
+            console.log(`✅ Auto-loaded ${data.total} GitHub files untuk dropdown`);
+        } else {
+            console.log('❌ Failed to auto-load GitHub files:', data.message);
+        }
+    } catch (error) {
+        console.error('Error auto-loading GitHub files:', error);
     }
 }
 
