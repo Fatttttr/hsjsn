@@ -433,19 +433,29 @@ async function setupGitHub() {
                 showToast('GitHub Configured', 'GitHub configuration saved and validated!', 'success');
                 updateStatus('GitHub configuration saved', 'success');
                 
-                // USER REQUEST: Auto-show dropdown dengan files yang sudah dimuat
-                if (validateData.files && validateData.files.length > 0) {
-                    showGitHubDropdown(validateData.files);
+                // USER REQUEST: Auto-show dropdown dengan files atau create option
+                if (validateData.can_show_dropdown) {
+                    const showCreateOption = validateData.show_create_option || false;
+                    showGitHubDropdown(validateData.files || [], showCreateOption);
                     
                     // Show additional repo info if available
                     const repoInfo = validateData.repo_info || {};
                     const repoDetails = repoInfo.private ? '🔒 Private' : '🌐 Public';
                     const branchInfo = repoInfo.branch ? ` (${repoInfo.branch})` : '';
                     
-                    showSetupStatus(
-                        `✅ GitHub configured: ${validateData.file_count} JSON files found in ${repoDetails} repository${branchInfo}. Select a file to start testing.`, 
-                        'success'
-                    );
+                    if (showCreateOption && validateData.file_count === 0) {
+                        showSetupStatus(
+                            `✅ GitHub configured: ${repoDetails} repository${branchInfo}. No JSON files found - you can create a new config from local template.`, 
+                            'success'
+                        );
+                    } else if (validateData.file_count > 0) {
+                        showSetupStatus(
+                            `✅ GitHub configured: ${validateData.file_count} JSON files found in ${repoDetails} repository${branchInfo}. Select a file to start testing.`, 
+                            'success'
+                        );
+                    } else {
+                        showSetupStatus('GitHub configured successfully. Start testing to automatically use GitHub config.', 'success');
+                    }
                 } else {
                     showSetupStatus('GitHub configured successfully. Start testing to automatically use GitHub config.', 'success');
                 }
@@ -497,26 +507,148 @@ async function setupGitHub() {
     }
 }
 
-// USER REQUEST: Show GitHub dropdown dengan files
-function showGitHubDropdown(files) {
+// USER REQUEST: Show GitHub dropdown dengan files atau opsi create config baru
+function showGitHubDropdown(files, showCreateOption = false) {
     const fileSelection = document.getElementById('github-file-selection');
     const select = document.getElementById('github-files');
     
     if (!fileSelection || !select) return;
     
-    // Populate dropdown dengan files dari validasi
-    select.innerHTML = '<option value="">Select a configuration file...</option>';
+    // Remove existing event listeners
+    const newSelect = select.cloneNode(false);
+    select.parentNode.replaceChild(newSelect, select);
     
-    files.forEach(file => {
-        const option = document.createElement('option');
-        option.value = file.path;
-        option.textContent = file.name;
-        select.appendChild(option);
+    // Clear existing options
+    newSelect.innerHTML = '';
+    
+    if (showCreateOption && files.length === 0) {
+        // USER REQUEST: Jika tidak ada files, tampilkan opsi create config baru
+        newSelect.innerHTML = `
+            <option value="">Choose an option...</option>
+            <option value="__CREATE_NEW__">📄 Create New Config from Local Template</option>
+        `;
+        
+        console.log(`✅ GitHub dropdown shown with create new config option`);
+    } else {
+        // Normal dropdown dengan files yang ada
+        newSelect.innerHTML = '<option value="">Select a configuration file...</option>';
+        
+        files.forEach(file => {
+            const option = document.createElement('option');
+            option.value = file.path;
+            option.textContent = file.name;
+            newSelect.appendChild(option);
+        });
+        
+        // Add create new option at the bottom jika ada files
+        if (files.length > 0) {
+            const createOption = document.createElement('option');
+            createOption.value = '__CREATE_NEW__';
+            createOption.textContent = '📄 Create New Config from Local Template';
+            newSelect.appendChild(createOption);
+        }
+        
+        console.log(`✅ GitHub dropdown shown with ${files.length} files`);
+    }
+    
+    // Add single event listener untuk handle create new config
+    newSelect.addEventListener('change', function() {
+        if (this.value === '__CREATE_NEW__') {
+            showCreateConfigDialog();
+        }
     });
     
     // Show dropdown
     fileSelection.style.display = 'block';
-    console.log(`✅ GitHub dropdown shown with ${files.length} files`);
+}
+
+// USER REQUEST: Dialog untuk create config baru dari template lokal
+function showCreateConfigDialog() {
+    const filename = prompt(
+        '📄 Create New VPN Configuration\n\n' +
+        'Enter filename for new config:\n' +
+        '(will be created from local template.json)\n\n' +
+        'Example: vpn-config-2024.json',
+        'vpn-config-' + new Date().toISOString().slice(0, 10) + '.json'
+    );
+    
+    if (filename && filename.trim()) {
+        createConfigFromTemplate(filename.trim());
+    } else {
+        // Reset dropdown selection
+        const select = document.getElementById('github-files');
+        if (select) {
+            select.value = '';
+        }
+    }
+}
+
+// USER REQUEST: Function untuk create config dari template lokal
+async function createConfigFromTemplate(filename) {
+    updateStatus('Creating config from template...', 'info');
+    
+    try {
+        const response = await fetch('/api/create-config-from-template', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('Config Created', `Successfully created "${data.filename}" from local template!`, 'success');
+            updateStatus('Config created successfully', 'success');
+            
+            // Refresh GitHub files untuk menampilkan file baru
+            await refreshGitHubFiles();
+            
+            // Auto-select file yang baru dibuat
+            const select = document.getElementById('github-files');
+            if (select) {
+                select.value = data.filename;
+            }
+            
+        } else {
+            showToast('Create Failed', data.message, 'error');
+            updateStatus('Failed to create config', 'error');
+            
+            // Reset dropdown selection
+            const select = document.getElementById('github-files');
+            if (select) {
+                select.value = '';
+            }
+        }
+    } catch (error) {
+        console.error('Create config error:', error);
+        showToast('Network Error', 'Failed to create config file', 'error');
+        updateStatus('Network error', 'error');
+        
+        // Reset dropdown selection
+        const select = document.getElementById('github-files');
+        if (select) {
+            select.value = '';
+        }
+    }
+}
+
+// USER REQUEST: Function untuk refresh GitHub files setelah create
+async function refreshGitHubFiles() {
+    try {
+        const response = await fetch('/api/list-github-files');
+        const data = await response.json();
+        
+        if (data.success && data.files) {
+            // Update dropdown dengan files yang baru (termasuk yang baru dibuat)
+            showGitHubDropdown(data.files, false);
+            
+            console.log(`🔄 Refreshed GitHub files: ${data.total} files found`);
+        }
+    } catch (error) {
+        console.error('Error refreshing GitHub files:', error);
+    }
 }
 
 // Update GitHub status badge
@@ -612,10 +744,19 @@ async function autoLoadGitHubFiles() {
         const response = await fetch('/api/list-github-files');
         const data = await response.json();
         
-        if (data.success && data.files) {
-            showGitHubDropdown(data.files);
-            showSetupStatus(`GitHub configured. Found ${data.total} JSON files. Select a file to start testing.`, 'success');
-            console.log(`✅ Auto-loaded ${data.total} GitHub files untuk dropdown`);
+        if (data.success) {
+            const files = data.files || [];
+            const showCreateOption = files.length === 0; // Show create option if no files
+            
+            showGitHubDropdown(files, showCreateOption);
+            
+            if (files.length > 0) {
+                showSetupStatus(`GitHub configured. Found ${data.total} JSON files. Select a file to start testing.`, 'success');
+                console.log(`✅ Auto-loaded ${data.total} GitHub files untuk dropdown`);
+            } else {
+                showSetupStatus('GitHub configured. No JSON files found - you can create a new config from local template.', 'success');
+                console.log(`✅ Auto-loaded GitHub dropdown with create option (no files found)`);
+            }
         } else {
             console.log('❌ Failed to auto-load GitHub files:', data.message);
         }
