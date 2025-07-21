@@ -39,7 +39,6 @@ class BotConfig:
     github_token: str
     github_owner: str
     github_repo: str
-    config_file: str = "template.json"
     
     # Testing settings
     check_interval_minutes: int = 5
@@ -84,82 +83,144 @@ class VPNBotChecker:
                 config.twilio_auth_token
             )
     
-    async def load_accounts_from_github(self) -> List[str]:
-        """Load VPN accounts from GitHub repository"""
+    async def load_all_configs_from_github(self) -> Dict[str, List[str]]:
+        """Load VPN accounts from all JSON files in GitHub repository"""
         try:
-            logger.info(f"Loading config from GitHub: {self.config.config_file}")
+            logger.info("Loading all JSON config files from GitHub repository...")
             
-            # Get file content from GitHub
-            file_content = self.github_client.get_file_content(self.config.config_file)
-            if not file_content:
-                logger.error(f"Failed to load {self.config.config_file} from GitHub")
-                return []
+            # Get list of JSON files from repository
+            json_files = self.github_client.list_files_in_repo()
+            json_files = [f for f in json_files if f.endswith('.json')]
             
-            # Parse JSON content
-            config_data = json.loads(file_content)
+            if not json_files:
+                logger.warning("No JSON files found in repository")
+                return {}
             
-            # Extract VPN accounts using the same logic as VortexVPN Manager
-            accounts = extract_vpn_accounts(config_data)
+            all_configs = {}
             
-            logger.info(f"Loaded {len(accounts)} VPN accounts from GitHub")
-            return accounts
+            for filename in json_files:
+                try:
+                    logger.info(f"Loading config from: {filename}")
+                    
+                    # Get file content from GitHub
+                    file_content = self.github_client.get_file_content(filename)
+                    if not file_content:
+                        logger.error(f"Failed to load {filename} from GitHub")
+                        continue
+                    
+                    # Parse JSON content
+                    config_data = json.loads(file_content)
+                    
+                    # Extract VPN accounts using the same logic as VortexVPN Manager
+                    accounts = extract_vpn_accounts(config_data)
+                    
+                    if accounts:
+                        all_configs[filename] = accounts
+                        logger.info(f"Loaded {len(accounts)} VPN accounts from {filename}")
+                    else:
+                        logger.warning(f"No VPN accounts found in {filename}")
+                        
+                except Exception as e:
+                    logger.error(f"Error loading {filename}: {str(e)}")
+                    continue
+            
+            total_accounts = sum(len(accounts) for accounts in all_configs.values())
+            logger.info(f"Total loaded: {total_accounts} accounts from {len(all_configs)} config files")
+            
+            return all_configs
             
         except Exception as e:
-            logger.error(f"Error loading accounts from GitHub: {str(e)}")
-            return []
+            logger.error(f"Error loading configs from GitHub: {str(e)}")
+            return {}
     
-    async def test_accounts(self, accounts: List[str]) -> Dict[str, Any]:
-        """Test VPN accounts and return results"""
-        if not accounts:
-            return {
-                'successful': 0,
-                'failed': 0,
-                'total': 0,
-                'success_rate': 0.0,
-                'test_time': datetime.now().strftime('%H:%M:%S')
-            }
+    async def test_accounts_by_file(self, all_configs: Dict[str, List[str]]) -> Dict[str, Dict[str, Any]]:
+        """Test VPN accounts grouped by config file"""
+        if not all_configs:
+            return {}
         
-        logger.info(f"Testing {len(accounts)} VPN accounts...")
-        
+        file_results = {}
         tester = VPNTester(
             max_concurrent=self.config.max_concurrent_tests,
             timeout=self.config.timeout_seconds
         )
         
-        # Test accounts concurrently
-        results = await tester.test_multiple_accounts(accounts)
+        for filename, accounts in all_configs.items():
+            if not accounts:
+                file_results[filename] = {
+                    'successful': 0,
+                    'failed': 0,
+                    'total': 0,
+                    'success_rate': 0.0,
+                    'test_time': datetime.now().strftime('%H:%M:%S')
+                }
+                continue
+            
+            logger.info(f"Testing {len(accounts)} accounts from {filename}...")
+            
+            # Test accounts concurrently
+            results = await tester.test_multiple_accounts(accounts)
+            
+            # Count successful and failed tests
+            successful = sum(1 for result in results if result.is_working)
+            failed = len(results) - successful
+            total = len(results)
+            success_rate = (successful / total * 100) if total > 0 else 0.0
+            
+            file_results[filename] = {
+                'successful': successful,
+                'failed': failed,
+                'total': total,
+                'success_rate': success_rate,
+                'test_time': datetime.now().strftime('%H:%M:%S'),
+                'results': results
+            }
+            
+            logger.info(f"{filename}: {successful}/{total} accounts working ({success_rate:.1f}%)")
         
-        # Count successful and failed tests
-        successful = sum(1 for result in results if result.is_working)
-        failed = len(results) - successful
-        total = len(results)
-        success_rate = (successful / total * 100) if total > 0 else 0.0
-        
-        return {
-            'successful': successful,
-            'failed': failed,
-            'total': total,
-            'success_rate': success_rate,
-            'test_time': datetime.now().strftime('%H:%M:%S'),
-            'results': results
-        }
+        return file_results
     
-    def format_summary_message(self, results: Dict[str, Any]) -> str:
-        """Format simple summary message for notifications"""
-        successful = results['successful']
-        failed = results['failed']
-        total = results['total']
-        success_rate = results['success_rate']
-        check_time = results['test_time']
+    def format_summary_message(self, file_results: Dict[str, Dict[str, Any]]) -> str:
+        """Format summary message with per-file results"""
+        if not file_results:
+            return "❌ No config files found or all failed to load"
         
-        # Simple summary message as requested
+        check_time = datetime.now().strftime('%H:%M:%S')
         summary = f"🔍 VPN Status Report - {check_time}\n\n"
-        summary += f"✅ Akun Hidup: {successful}\n"
-        summary += f"❌ Akun Mati: {failed}\n"
-        summary += f"📦 Total: {total}\n\n"
         
-        if total > 0:
-            summary += f"📊 {success_rate:.0f}% akun masih berfungsi\n\n"
+        total_successful = 0
+        total_failed = 0
+        total_accounts = 0
+        
+        # Per-file breakdown
+        for filename, results in file_results.items():
+            successful = results['successful']
+            failed = results['failed']
+            total = results['total']
+            success_rate = results['success_rate']
+            
+            # Accumulate totals
+            total_successful += successful
+            total_failed += failed
+            total_accounts += total
+            
+            # File status with emoji indicator
+            if total > 0:
+                status_emoji = "✅" if success_rate >= 70 else "⚠️" if success_rate >= 30 else "❌"
+                summary += f"{status_emoji} **{filename}**\n"
+                summary += f"   Hidup: {successful} | Mati: {failed} | Total: {total}\n"
+                summary += f"   Status: {success_rate:.0f}% berfungsi\n\n"
+            else:
+                summary += f"❌ **{filename}**\n"
+                summary += f"   No accounts found\n\n"
+        
+        # Overall summary
+        if total_accounts > 0:
+            overall_rate = (total_successful / total_accounts * 100)
+            summary += f"📊 **RINGKASAN TOTAL**\n"
+            summary += f"✅ Total Hidup: {total_successful}\n"
+            summary += f"❌ Total Mati: {total_failed}\n"
+            summary += f"📦 Total Akun: {total_accounts}\n"
+            summary += f"📈 Success Rate: {overall_rate:.0f}%\n\n"
         
         summary += f"🔄 Cek otomatis setiap {self.config.check_interval_minutes} menit"
         
@@ -208,22 +269,25 @@ class VPNBotChecker:
         try:
             logger.info("Starting VPN check cycle...")
             
-            # Load accounts from GitHub
-            accounts = await self.load_accounts_from_github()
+            # Load all config files from GitHub
+            all_configs = await self.load_all_configs_from_github()
             
-            if not accounts:
-                logger.warning("No VPN accounts found, skipping check")
+            if not all_configs:
+                logger.warning("No config files found or all failed to load")
                 return
             
-            # Test accounts
-            results = await self.test_accounts(accounts)
+            # Test accounts by file
+            file_results = await self.test_accounts_by_file(all_configs)
             
             # Format and send summary message
             if self.config.send_summary:
-                summary_message = self.format_summary_message(results)
+                summary_message = self.format_summary_message(file_results)
                 await self.send_notifications(summary_message)
             
-            logger.info(f"Check completed: {results['successful']}/{results['total']} accounts working")
+            # Log summary
+            total_successful = sum(r['successful'] for r in file_results.values())
+            total_accounts = sum(r['total'] for r in file_results.values())
+            logger.info(f"Check completed: {total_successful}/{total_accounts} total accounts working across {len(file_results)} files")
             
         except Exception as e:
             logger.error(f"Error during check cycle: {str(e)}")
@@ -260,7 +324,6 @@ def load_bot_config() -> BotConfig:
             github_token=config_data.get('github_token'),
             github_owner=config_data.get('github_owner'),
             github_repo=config_data.get('github_repo'),
-            config_file=config_data.get('config_file', 'template.json'),
             check_interval_minutes=config_data.get('check_interval_minutes', 5),
             max_concurrent_tests=config_data.get('max_concurrent_tests', 5),
             timeout_seconds=config_data.get('timeout_seconds', 10),
@@ -279,7 +342,6 @@ def load_bot_config() -> BotConfig:
             github_token=os.getenv('GITHUB_TOKEN'),
             github_owner=os.getenv('GITHUB_OWNER'),
             github_repo=os.getenv('GITHUB_REPO'),
-            config_file=os.getenv('CONFIG_FILE', 'template.json'),
             check_interval_minutes=int(os.getenv('CHECK_INTERVAL_MINUTES', '5')),
             max_concurrent_tests=int(os.getenv('MAX_CONCURRENT_TESTS', '5')),
             timeout_seconds=int(os.getenv('TIMEOUT_SECONDS', '10')),

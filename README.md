@@ -5,10 +5,10 @@ Automated VPN account monitoring bot yang secara otomatis mengecek status VPN ac
 ## 📍 Overview
 
 Bot ini dirancang untuk:
-- 🔄 **Monitor otomatis** VPN accounts dari file `template.json` di repository ini
+- 🔄 **Monitor otomatis** VPN accounts dari **semua file JSON** di repository ini
 - ⏰ **Scheduled checking** dengan interval yang bisa diatur (dalam menit)
 - 📱 **Notifikasi real-time** via Telegram & WhatsApp
-- 📊 **Laporan sederhana** jumlah akun hidup/mati
+- 📊 **Laporan per file** dengan nama file dan status hidup/mati
 - 🚀 **Menggunakan logic testing** yang sama dengan VortexVPN Manager
 
 ## 🏗️ Repository Structure
@@ -18,7 +18,7 @@ Bot ini dirancang untuk:
 - **`bot-vpn-checker`**: Bot VPN Checker (Branch ini - Automated monitoring)
 
 ### **Bot Purpose:**
-Bot ini akan monitor file `template.json` di repository ini dan mengirim laporan status VPN accounts secara otomatis.
+Bot ini akan scan dan monitor **semua file JSON** di repository ini (template.json, config1.json, dll) dan mengirim laporan status VPN accounts per file secara otomatis.
 
 ## 🚀 Quick Start
 
@@ -59,7 +59,6 @@ Edit `bot_config.json`:
   "github_token": "ghp_your_github_token",
   "github_owner": "Fatttttr",
   "github_repo": "hsjsn",
-  "config_file": "template.json",
   
   "check_interval_minutes": 5,
   "max_concurrent_tests": 5,
@@ -76,10 +75,11 @@ Edit `bot_config.json`:
 - **`github_token`**: Personal Access Token untuk akses repository ini
 - **`github_owner`**: "Fatttttr" (fixed)
 - **`github_repo`**: "hsjsn" (repository ini)
-- **`config_file`**: "template.json" (file yang dimonitor)
 - **`check_interval_minutes`**: Interval pengecekan (default: 5 menit)
 - **`telegram_token`**: Bot token dari @BotFather
 - **`telegram_chat_id`**: Chat ID untuk notifikasi
+
+**Note**: Bot akan otomatis scan semua file `.json` di repository dan test semuanya.
 
 ## 📱 Setup Telegram Bot
 
@@ -104,26 +104,39 @@ python test_bot.py
 Test ini akan:
 - ✅ Load konfigurasi
 - 🔍 Test koneksi ke repository ini
-- 📊 Load dan test VPN accounts dari template.json
-- 📱 Format sample notification message
+- 📊 Scan semua file JSON dan load VPN accounts
+- 🧪 Test accounts per file
+- 📱 Format sample notification message dengan breakdown per file
 - 🚀 Optional: kirim test notification
 
 ## 🔄 Bot Workflow
 
 1. **Load config** dari `bot_config.json`
-2. **Monitor** file `template.json` di repository ini
-3. **Extract VPN accounts** menggunakan logic yang sama dengan VortexVPN Manager
-4. **Test accounts** secara concurrent
-5. **Send notification** dengan format sederhana:
+2. **Scan semua file JSON** di repository ini
+3. **Extract VPN accounts** dari setiap file menggunakan logic yang sama dengan VortexVPN Manager
+4. **Test accounts per file** secara concurrent
+5. **Send notification** dengan breakdown per file:
 
 ```
 🔍 VPN Status Report - 14:30:25
 
-✅ Akun Hidup: 12
-❌ Akun Mati: 3
-📦 Total: 15
+✅ **template.json**
+   Hidup: 8 | Mati: 2 | Total: 10
+   Status: 80% berfungsi
 
-📊 80% akun masih berfungsi
+⚠️ **config1.json**
+   Hidup: 3 | Mati: 7 | Total: 10
+   Status: 30% berfungsi
+
+❌ **config2.json**
+   Hidup: 1 | Mati: 9 | Total: 10
+   Status: 10% berfungsi
+
+📊 **RINGKASAN TOTAL**
+✅ Total Hidup: 12
+❌ Total Mati: 18
+📦 Total Akun: 30
+📈 Success Rate: 40%
 
 🔄 Cek otomatis setiap 5 menit
 ```

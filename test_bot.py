@@ -36,33 +36,38 @@ async def test_single_check():
         # Create bot instance
         bot = VPNBotChecker(config)
         
-        # Test loading accounts from GitHub
-        print("🔍 Testing GitHub connection and account loading...")
-        accounts = await bot.load_accounts_from_github()
+        # Test loading configs from GitHub
+        print("🔍 Testing GitHub connection and config loading...")
+        all_configs = await bot.load_all_configs_from_github()
         
-        if not accounts:
-            print("❌ No accounts found or GitHub connection failed")
+        if not all_configs:
+            print("❌ No config files found or GitHub connection failed")
             return
         
-        print(f"✅ Loaded {len(accounts)} accounts from GitHub")
+        total_accounts = sum(len(accounts) for accounts in all_configs.values())
+        print(f"✅ Loaded {total_accounts} accounts from {len(all_configs)} config files:")
+        for filename, accounts in all_configs.items():
+            print(f"   📄 {filename}: {len(accounts)} accounts")
         
-        # Test VPN accounts
-        print("🧪 Testing VPN accounts...")
-        results = await bot.test_accounts(accounts)
+        # Test VPN accounts by file
+        print("\n🧪 Testing VPN accounts...")
+        file_results = await bot.test_accounts_by_file(all_configs)
         
-        # Display results
-        print("\n📊 Test Results:")
-        print(f"✅ Working: {results['successful']}")
-        print(f"❌ Failed: {results['failed']}")
-        print(f"📦 Total: {results['total']}")
-        print(f"📈 Success Rate: {results['success_rate']:.1f}%")
+        # Display results per file
+        print("\n📊 Test Results by File:")
+        for filename, results in file_results.items():
+            print(f"📄 {filename}:")
+            print(f"   ✅ Working: {results['successful']}")
+            print(f"   ❌ Failed: {results['failed']}")
+            print(f"   📦 Total: {results['total']}")
+            print(f"   📈 Success Rate: {results['success_rate']:.1f}%")
         
         # Test message formatting
         print("\n📱 Sample Notification Message:")
-        message = bot.format_summary_message(results)
-        print("=" * 50)
+        message = bot.format_summary_message(file_results)
+        print("=" * 60)
         print(message)
-        print("=" * 50)
+        print("=" * 60)
         
         # Test notification (if configured)
         if config.telegram_token or config.twilio_account_sid:
@@ -90,7 +95,7 @@ def test_config_loading():
         config = load_bot_config()
         print("✅ Configuration loaded successfully")
         print(f"📁 GitHub Repo: {config.github_owner}/{config.github_repo}")
-        print(f"📄 Config File: {config.config_file}")
+        print(f"🔍 Scan Mode: All JSON files in repository")
         print(f"⏰ Check Interval: {config.check_interval_minutes} minutes")
         print(f"📱 Telegram: {'✅' if config.telegram_token else '❌'}")
         print(f"📱 WhatsApp: {'✅' if config.twilio_account_sid else '❌'}")
