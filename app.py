@@ -128,30 +128,163 @@ def list_github_files():
     json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
     return jsonify({'success': True, 'files': json_files})
 
+@app.route('/api/setup-github', methods=['POST'])
+def setup_github():
+    """Setup GitHub client and optionally load files list"""
+    try:
+        data = request.json
+        token = data.get('token', '').strip()
+        owner = data.get('owner', '').strip()
+        repo = data.get('repo', '').strip()
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'Token, owner, and repo are required'
+            })
+        
+        # Test GitHub connection
+        github_client = GitHubClient(token, owner, repo)
+        
+        # Test connection by listing files
+        try:
+            files = github_client.list_files_in_repo()
+            json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': f'Failed to connect to GitHub: {str(e)}'
+            })
+        
+        # Save configuration
+        save_github_config(token, owner, repo)
+        
+        # Store in session
+        session_data['github_client'] = github_client
+        
+        return jsonify({
+            'success': True,
+            'message': 'GitHub configured successfully',
+            'files': json_files
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Setup error: {str(e)}'
+        })
+
+@app.route('/api/create-github-file', methods=['POST'])
+def create_github_file():
+    """Create new GitHub file from local template"""
+    try:
+        data = request.json
+        file_name = data.get('file_name', '').strip()
+        
+        if not file_name:
+            return jsonify({'success': False, 'message': 'File name is required'})
+        
+        if not session_data['github_client']:
+            return jsonify({'success': False, 'message': 'GitHub not configured'})
+        
+        # Ensure .json extension
+        if not file_name.endswith('.json'):
+            file_name += '.json'
+        
+        # Load local template
+        try:
+            with open(TEMPLATE_FILE, 'r') as f:
+                template_content = f.read()
+        except Exception as e:
+            return jsonify({'success': False, 'message': f'Failed to read template: {str(e)}'})
+        
+        # Create file on GitHub
+        commit_message = f"Create new configuration file: {file_name}"
+        result = session_data['github_client'].update_or_create_file(
+            file_name, 
+            template_content, 
+            commit_message
+        )
+        
+        if result:
+            # Parse template content for session
+            config_data = json.loads(template_content)
+            existing_accounts = extract_accounts_from_config(config_data)
+            existing_accounts = ensure_ws_path_field(existing_accounts)
+            session_data['all_accounts'] = existing_accounts if isinstance(existing_accounts, list) else []
+            session_data['github_path'] = file_name
+            session_data['github_sha'] = result.get('content', {}).get('sha')
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Successfully created {file_name} from template',
+                'file_path': file_name,
+                'accounts_found': len(session_data['all_accounts'])
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Failed to create file on GitHub'})
+    
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error creating file: {str(e)}'})
+
 @app.route('/api/load-config', methods=['POST'])
 def load_config():
     data = request.json
-    source = data.get('source')  # 'local' or 'github'
+    source = data.get('source')  # 'template' or 'github'
     
     try:
         if source == 'github':
-            file_path = data.get('file_path')
-            if not session_data['github_client'] or not file_path:
-                return jsonify({'success': False, 'message': 'GitHub client not configured or file path missing'})
+            action = data.get('action', 'load-existing')
             
-            content, sha = session_data['github_client'].get_file(file_path)
-            if content:
-                config_data = json.loads(content)
-                session_data['github_path'] = file_path
-                session_data['github_sha'] = sha
+            if action == 'create-new':
+                # Create new file from template
+                file_name = data.get('file_name', 'config.json').strip()
+                if not file_name.endswith('.json'):
+                    file_name += '.json'
+                
+                if not session_data['github_client']:
+                    return jsonify({'success': False, 'message': 'GitHub not configured'})
+                
+                # Load local template
+                with open(TEMPLATE_FILE, 'r') as f:
+                    template_content = f.read()
+                
+                # Create file on GitHub
+                commit_message = f"Create new configuration file: {file_name}"
+                result = session_data['github_client'].update_or_create_file(
+                    file_name, 
+                    template_content, 
+                    commit_message
+                )
+                
+                if result:
+                    config_data = json.loads(template_content)
+                    session_data['github_path'] = file_name
+                    session_data['github_sha'] = result.get('content', {}).get('sha')
+                    message = f'Successfully created {file_name} from local template'
+                else:
+                    return jsonify({'success': False, 'message': 'Failed to create file on GitHub'})
             else:
-                return jsonify({'success': False, 'message': 'Failed to load file from GitHub'})
+                # Load existing file
+                file_path = data.get('file_path')
+                if not session_data['github_client'] or not file_path:
+                    return jsonify({'success': False, 'message': 'GitHub client not configured or file path missing'})
+                
+                content, sha = session_data['github_client'].get_file(file_path)
+                if content:
+                    config_data = json.loads(content)
+                    session_data['github_path'] = file_path
+                    session_data['github_sha'] = sha
+                    message = f'Successfully loaded {file_path} from GitHub'
+                else:
+                    return jsonify({'success': False, 'message': 'Failed to load file from GitHub'})
         else:
             # Load from local template
             with open(TEMPLATE_FILE, 'r') as f:
                 config_data = json.load(f)
             session_data['github_path'] = None
             session_data['github_sha'] = None
+            message = 'Successfully loaded local template configuration'
         
         # Extract existing accounts
         existing_accounts = extract_accounts_from_config(config_data)
@@ -160,7 +293,7 @@ def load_config():
         
         return jsonify({
             'success': True, 
-            'message': f'Loaded {len(session_data["all_accounts"])} existing accounts',
+            'message': f'{message} - Found {len(session_data["all_accounts"])} existing accounts',
             'account_count': len(session_data['all_accounts'])
         })
     except Exception as e:

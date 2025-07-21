@@ -99,6 +99,21 @@ function handleSetupSourceChange(event) {
     }
 }
 
+// Handle GitHub action change (Load Existing vs Create New)
+function handleGitHubActionChange(event) {
+    const action = event.target.value;
+    const existingSection = document.getElementById('existing-file-section');
+    const newSection = document.getElementById('new-file-section');
+    
+    if (action === 'create-new') {
+        existingSection.style.display = 'none';
+        newSection.style.display = 'block';
+    } else {
+        existingSection.style.display = 'block';
+        newSection.style.display = 'none';
+    }
+}
+
 // USER REQUEST: Smart detect - auto-load configuration saat start testing
 function getSelectedConfigSource() {
     const selectedRadio = document.querySelector('input[name="setup-source"]:checked');
@@ -232,8 +247,17 @@ function setupFormHandlers() {
         radio.addEventListener('change', handleSetupSourceChange);
     });
     
+    // GitHub action selection
+    const githubAction = document.getElementById('github-action');
+    if (githubAction) {
+        githubAction.addEventListener('change', handleGitHubActionChange);
+    }
+    
     // GitHub setup
     document.getElementById('setup-github-btn').addEventListener('click', setupGitHub);
+    
+    // Load configuration
+    document.getElementById('load-config-btn').addEventListener('click', loadConfiguration);
     
     // Template setup - USER REQUEST: Smart detect, no manual load button
     
@@ -370,8 +394,8 @@ async function setupGitHub() {
     updateStatus('Configuring GitHub...', 'info');
     
     try {
-        // USER REQUEST: Save GitHub config to database
-        const response = await fetch('/api/save-github-config', {
+        // Setup GitHub and auto-load files
+        const response = await fetch('/api/setup-github', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -383,15 +407,22 @@ async function setupGitHub() {
         
         if (data.success) {
             updateGitHubStatus('Configured');
-            showToast('GitHub Saved', 'GitHub configuration saved successfully!', 'success');
-            updateStatus('GitHub configuration saved', 'success');
+            isGitHubConfigured = true;
+            showToast('GitHub Configured', 'GitHub setup successful and files loaded!', 'success');
+            updateStatus('GitHub configured', 'success');
             
-            // USER REQUEST: No manual file selection, will auto-detect saat start testing
-            showSetupStatus('GitHub configuration saved. Start testing to automatically use GitHub config.', 'success');
+            // Auto-populate file dropdown
+            populateFileDropdown(data.files);
+            
+            // Show file selection
+            const githubFileSelection = document.getElementById('github-file-selection');
+            githubFileSelection.style.display = 'block';
+            
+            showSetupStatus(`GitHub configured with ${data.files.length} JSON files found`, 'success');
         } else {
             updateGitHubStatus('Error');
-            showToast('Save Failed', data.message, 'error');
-            updateStatus('GitHub save failed', 'error');
+            showToast('Setup Failed', data.message, 'error');
+            updateStatus('GitHub setup failed', 'error');
         }
     } catch (error) {
         console.error('GitHub setup error:', error);
@@ -420,7 +451,20 @@ function updateGitHubStatus(status) {
     }
 }
 
-// Load GitHub files
+// Populate file dropdown with files data
+function populateFileDropdown(files) {
+    const select = document.getElementById('github-files');
+    select.innerHTML = '<option value="">Select a file...</option>';
+    
+    files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.path;
+        option.textContent = file.name;
+        select.appendChild(option);
+    });
+}
+
+// Load GitHub files (fallback method)
 async function loadGitHubFiles() {
     if (!isGitHubConfigured) return;
     
@@ -432,13 +476,7 @@ async function loadGitHubFiles() {
         const data = await response.json();
         
         if (data.success) {
-            select.innerHTML = '<option value="">Select a file...</option>';
-            data.files.forEach(file => {
-                const option = document.createElement('option');
-                option.value = file.path;
-                option.textContent = file.name;
-                select.appendChild(option);
-            });
+            populateFileDropdown(data.files);
         } else {
             select.innerHTML = '<option value="">Error loading files</option>';
             showToast('Load Error', data.message, 'error');
@@ -471,6 +509,14 @@ async function loadSavedGitHubConfig() {
             if (data.has_token) {
                 document.getElementById('github-token').placeholder = 'Token saved (enter new token to update)';
                 updateGitHubStatus('Configured');
+                isGitHubConfigured = true;
+                
+                // Auto-load files if token is available
+                loadGitHubFiles();
+                
+                // Show file selection
+                const githubFileSelection = document.getElementById('github-file-selection');
+                githubFileSelection.style.display = 'block';
             } else {
                 updateGitHubStatus('Token Required');
             }
@@ -515,16 +561,28 @@ async function autoLoadConfiguration() {
 
 // Manual configuration loading
 async function loadConfiguration() {
-    const configSource = document.querySelector('input[name="config-source"]:checked').value;
+    const configSource = document.querySelector('input[name="setup-source"]:checked').value;
     let requestData = { source: configSource };
     
     if (configSource === 'github') {
-        const filePath = document.getElementById('github-files').value;
-        if (!filePath) {
-            showToast('File Required', 'Please select a GitHub file', 'warning');
-            return;
+        const action = document.getElementById('github-action').value;
+        requestData.action = action;
+        
+        if (action === 'create-new') {
+            const fileName = document.getElementById('new-file-name').value.trim();
+            if (!fileName) {
+                showToast('File Name Required', 'Please enter a file name', 'warning');
+                return;
+            }
+            requestData.file_name = fileName;
+        } else {
+            const filePath = document.getElementById('github-files').value;
+            if (!filePath) {
+                showToast('File Required', 'Please select a GitHub file', 'warning');
+                return;
+            }
+            requestData.file_path = filePath;
         }
-        requestData.file_path = filePath;
     }
     
     setButtonLoading('load-config-btn', true);

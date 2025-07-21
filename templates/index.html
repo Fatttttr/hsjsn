@@ -111,15 +111,40 @@
                         <!-- GitHub File Selection -->
                         <div id="github-file-selection" style="display: none;">
                             <div class="form-group">
-                                <label for="github-files">Select Configuration File</label>
-                                <select id="github-files">
-                                    <option value="">Loading...</option>
+                                <label for="github-action">Action</label>
+                                <select id="github-action">
+                                    <option value="load-existing">Load Existing File</option>
+                                    <option value="create-new">Create New from Template</option>
                                 </select>
+                            </div>
+                            
+                            <!-- Existing File Selection -->
+                            <div id="existing-file-section">
+                                <div class="form-group">
+                                    <label for="github-files">Select Configuration File</label>
+                                    <select id="github-files">
+                                        <option value="">Loading...</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <!-- Create New File Section -->
+                            <div id="new-file-section" style="display: none;">
+                                <div class="form-group">
+                                    <label for="new-file-name">New File Name</label>
+                                    <input type="text" id="new-file-name" placeholder="config.json" value="config.json">
+                                    <small>File will be created from local template.json</small>
+                                </div>
                             </div>
                         </div>
 
                         <button class="btn btn-primary" id="setup-github-btn">
                             <span class="btn-text">💾 Save GitHub Config</span>
+                            <div class="btn-loader hidden"></div>
+                        </button>
+                        
+                        <button class="btn btn-success" id="load-config-btn" style="margin-top: 10px;">
+                            <span class="btn-text">📁 Load Configuration</span>
                             <div class="btn-loader hidden"></div>
                         </button>
                     </div>
