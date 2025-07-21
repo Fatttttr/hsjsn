@@ -55,7 +55,7 @@ class BotConfig:
     config_file: str = "template.json"
     
     # Schedule settings
-    check_interval_hours: int = 6  # Check every 6 hours
+    check_interval_minutes: int = 5  # Check every 5 minutes (for testing)
     max_concurrent_tests: int = 5
     
     # Notification settings
@@ -187,52 +187,31 @@ class VPNBotChecker:
             }
 
     def format_summary_message(self, results: Dict[str, Any]) -> str:
-        """Format test results as message for bots"""
+        """Format test results as simple hidup/mati report"""
         if not results['success']:
             return f"❌ VPN Check Failed\n\nError: {results.get('message', 'Unknown error')}"
         
-        check_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        check_time = datetime.now().strftime("%H:%M:%S")
         total = results['total_accounts']
         successful = results['successful_count']
         failed = results['failed_count']
         
-        # Summary header
-        summary = f"🔍 VPN Account Check Report\n"
-        summary += f"📅 Time: {check_time}\n"
-        summary += f"📊 Results: {successful}✅ / {failed}❌ / {total}📦\n\n"
+        # Simple summary message
+        summary = f"🔍 VPN Status Report - {check_time}\n\n"
+        summary += f"✅ Akun Hidup: {successful}\n"
+        summary += f"❌ Akun Mati: {failed}\n"
+        summary += f"📦 Total: {total}\n\n"
         
         # Status overview
         if successful == total:
-            summary += "🎉 All accounts working perfectly!\n\n"
+            summary += "🎉 Semua akun normal!"
         elif successful > 0:
-            summary += f"⚠️ {failed} accounts need attention\n\n"
+            percentage = round((successful / total) * 100)
+            summary += f"📊 {percentage}% akun masih berfungsi"
         else:
-            summary += "🚨 All accounts failed - urgent check needed!\n\n"
+            summary += "🚨 Semua akun DOWN!"
         
-        # Show failed accounts if any
-        if failed > 0 and results['failed_accounts']:
-            summary += "❌ Failed Accounts:\n"
-            for acc in results['failed_accounts'][:5]:  # Max 5 failed accounts
-                acc_type = acc.get('VpnType', 'unknown').upper()
-                acc_tag = acc.get('OriginalTag', 'Unknown')
-                summary += f"• {acc_type}: {acc_tag}\n"
-            
-            if len(results['failed_accounts']) > 5:
-                summary += f"... and {len(results['failed_accounts']) - 5} more\n"
-            summary += "\n"
-        
-        # Show top working accounts
-        if successful > 0:
-            summary += "✅ Top Working Accounts:\n"
-            for acc in results['successful_accounts'][:3]:  # Top 3
-                acc_type = acc.get('VpnType', 'unknown').upper()
-                country = acc.get('Country', '❓')
-                latency = acc.get('Latency', -1)
-                latency_str = f"{latency}ms" if latency != -1 else "N/A"
-                summary += f"• {acc_type} {country} ({latency_str})\n"
-            summary += "\n"
-        
-        summary += f"🤖 Auto-check every {self.config.check_interval_hours}h"
+        summary += f"\n\n🔄 Cek otomatis setiap {self.config.check_interval_minutes} menit"
         return summary
 
     def format_failed_accounts_message(self, failed_accounts: List[Dict]) -> str:
@@ -354,22 +333,22 @@ class VPNBotChecker:
     def start_scheduler(self):
         """Start the automated scheduler"""
         logger.info(f"🤖 Starting VPN Bot Scheduler")
-        logger.info(f"⏰ Check interval: {self.config.check_interval_hours} hours")
+        logger.info(f"⏰ Check interval: {self.config.check_interval_minutes} minutes")
         logger.info(f"📁 Repository: {self.config.github_owner}/{self.config.github_repo}")
         logger.info(f"📄 Config file: {self.config.config_file}")
         
-        # Schedule periodic checks
-        schedule.every(self.config.check_interval_hours).hours.do(
+        # Schedule periodic checks (in minutes for testing)
+        schedule.every(self.config.check_interval_minutes).minutes.do(
             lambda: asyncio.run(self.run_check())
         )
         
         # Run first check immediately
         asyncio.run(self.run_check())
         
-        # Keep running
+        # Keep running (check every 30 seconds for scheduled tasks)
         while True:
             schedule.run_pending()
-            time.sleep(60)  # Check every minute for scheduled tasks
+            time.sleep(30)  # Check every 30 seconds for scheduled tasks
 
 def load_bot_config() -> BotConfig:
     """Load bot configuration from environment or config file"""
@@ -384,7 +363,7 @@ def load_bot_config() -> BotConfig:
             github_owner=config_data.get('github_owner', ''),
             github_repo=config_data.get('github_repo', ''),
             config_file=config_data.get('config_file', 'template.json'),
-            check_interval_hours=config_data.get('check_interval_hours', 6),
+            check_interval_minutes=config_data.get('check_interval_minutes', 5),
             max_concurrent_tests=config_data.get('max_concurrent_tests', 5),
             send_only_failures=config_data.get('send_only_failures', False),
             send_summary=config_data.get('send_summary', True),
@@ -402,7 +381,7 @@ def load_bot_config() -> BotConfig:
         github_owner=os.getenv('GITHUB_OWNER', ''),
         github_repo=os.getenv('GITHUB_REPO', ''),
         config_file=os.getenv('CONFIG_FILE', 'template.json'),
-        check_interval_hours=int(os.getenv('CHECK_INTERVAL_HOURS', '6')),
+        check_interval_minutes=int(os.getenv('CHECK_INTERVAL_MINUTES', '5')),
         max_concurrent_tests=int(os.getenv('MAX_CONCURRENT_TESTS', '5')),
         send_only_failures=os.getenv('SEND_ONLY_FAILURES', 'false').lower() == 'true',
         send_summary=os.getenv('SEND_SUMMARY', 'true').lower() == 'true',

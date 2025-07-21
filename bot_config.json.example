@@ -6,7 +6,7 @@
   "github_repo": "your-vpn-repo",
   "config_file": "template.json",
   
-  "check_interval_hours": 6,
+  "check_interval_minutes": 5,
   "max_concurrent_tests": 5,
   "send_only_failures": false,
   "send_summary": true,
@@ -23,6 +23,6 @@
     "telegram": "Create bot: @BotFather, get chat_id: @userinfobot",
     "whatsapp": "Sign up Twilio, use sandbox number +14155238886",
     "github": "Use same token from VortexVPN Manager",
-    "intervals": "1=hourly, 6=every 6h, 24=daily checks"
+    "intervals": "1=every minute, 5=every 5min, 60=hourly checks"
   }
 }
