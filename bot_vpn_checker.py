@@ -23,7 +23,7 @@ from telebot import TeleBot
 from twilio.rest import Client as TwilioClient
 
 # Import VPN testing modules
-from core import GitHubClient, VPNTester, extract_vpn_accounts
+from core import GitHubClient, VPNTester, extract_vpn_accounts, ensure_ws_path_field
 
 # Configure logging
 logging.basicConfig(
@@ -115,6 +115,8 @@ class VPNBotChecker:
                     accounts = extract_vpn_accounts(config_data)
                     
                     if accounts:
+                        # Apply same preprocessing as main branch
+                        accounts = ensure_ws_path_field(accounts)
                         all_configs[filename] = accounts
                         logger.info(f"Loaded {len(accounts)} VPN accounts from {filename}")
                     else:
@@ -203,12 +205,22 @@ class VPNBotChecker:
             total_failed += failed
             total_accounts += total
             
-            # File status with emoji indicator
+            # File status with emoji indicator and details like main branch
             if total > 0:
                 status_emoji = "✅" if success_rate >= 70 else "⚠️" if success_rate >= 30 else "❌"
                 summary += f"{status_emoji} **{filename}**\n"
                 summary += f"   Hidup: {successful} | Mati: {failed} | Total: {total}\n"
-                summary += f"   Status: {success_rate:.0f}% berfungsi\n\n"
+                summary += f"   Status: {success_rate:.0f}% berfungsi\n"
+                
+                # Add country info like main branch (if available)
+                countries = set()
+                for result in results.get('results', []):
+                    if hasattr(result, 'country') and result.country != '❓':
+                        countries.add(result.country)
+                if countries:
+                    country_list = ' '.join(sorted(countries)[:5])  # Show up to 5 countries
+                    summary += f"   Countries: {country_list}\n"
+                summary += "\n"
             else:
                 summary += f"❌ **{filename}**\n"
                 summary += f"   No accounts found\n\n"

@@ -48,6 +48,10 @@ async def test_single_check():
         print(f"✅ Loaded {total_accounts} accounts from {len(all_configs)} config files:")
         for filename, accounts in all_configs.items():
             print(f"   📄 {filename}: {len(accounts)} accounts")
+            # Show sample account info like main branch
+            if accounts:
+                sample = accounts[0]
+                print(f"      Sample: {sample.get('type', 'unknown')} - {sample.get('tag', 'no-tag')}")
         
         # Test VPN accounts by file
         print("\n🧪 Testing VPN accounts...")

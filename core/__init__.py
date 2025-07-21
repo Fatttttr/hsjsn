@@ -5,6 +5,7 @@ Core VPN testing modules for Bot VPN Checker
 from .github_client import GitHubClient
 from .extractor import extract_vpn_accounts
 from .tester import test_account
+from .core import ensure_ws_path_field
 
 import asyncio
 import json
@@ -14,11 +15,14 @@ class VPNTestResult:
     def __init__(self, account_dict: dict, result_dict: dict):
         self.account = account_dict
         self.result = result_dict
-        self.is_working = result_dict.get('Status') in ['✅']
+        # Main branch uses '✅' for success, check for that exactly
+        self.is_working = result_dict.get('Status') == '✅'
         self.latency = result_dict.get('Latency', -1)
         self.error = None if self.is_working else f"Status: {result_dict.get('Status', 'Unknown')}"
         self.country = result_dict.get('Country', '❓')
         self.provider = result_dict.get('Provider', '-')
+        self.tested_ip = result_dict.get('Tested IP', '-')
+        self.test_type = result_dict.get('TestType', 'N/A')
 
 # Enhanced VPN tester using main branch logic
 class VPNTester:
@@ -28,40 +32,37 @@ class VPNTester:
     
     async def test_multiple_accounts(self, accounts: list) -> list:
         """Test multiple VPN accounts using main branch testing logic"""
-        # Convert account URLs to account dicts if needed
-        account_dicts = []
-        for i, account in enumerate(accounts):
-            if isinstance(account, str):
-                # Try to parse as JSON first
-                try:
-                    account_dict = json.loads(account)
-                except:
-                    # If not JSON, treat as URL and create basic dict
-                    account_dict = {
-                        'tag': f'account-{i}',
-                        'type': 'vless',  # Default type
-                        'server': self._extract_server_from_url(account),
-                        'server_port': 443,
-                        '_raw_url': account
-                    }
-            else:
-                account_dict = account
-            
-            account_dicts.append(account_dict)
+        # Accounts should already be dict objects from extract_vpn_accounts
+        # No conversion needed - use directly like main branch
         
-        # Create semaphore and live_results
+        # Create semaphore and live_results exactly like main branch
         semaphore = asyncio.Semaphore(self.max_concurrent)
-        live_results = [{} for _ in account_dicts]
+        live_results = [
+            {
+                "index": i,
+                "OriginalTag": acc.get("tag", f"account-{i}"),
+                "OriginalAccount": acc,
+                "VpnType": acc.get("type", "-"),
+                "Country": "❓",
+                "Provider": "-",
+                "Tested IP": "-",
+                "Latency": -1,
+                "Jitter": -1,
+                "ICMP": "N/A",
+                "Status": "WAIT",
+            }
+            for i, acc in enumerate(accounts)
+        ]
         
-        # Use main branch test_account function
+        # Use main branch test_account function exactly the same way
         tasks = [
             test_account(acc, semaphore, i, live_results)
-            for i, acc in enumerate(account_dicts)
+            for i, acc in enumerate(accounts)
         ]
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        # Convert to VPNTestResult objects
+        # Convert to VPNTestResult objects exactly like main branch results
         final_results = []
         for i, result in enumerate(results):
             if isinstance(result, Exception):
@@ -72,9 +73,10 @@ class VPNTester:
                     'Country': '❓',
                     'Provider': '-'
                 }
-                final_results.append(VPNTestResult(account_dicts[i], error_result))
+                final_results.append(VPNTestResult(accounts[i], error_result))
             else:
-                final_results.append(VPNTestResult(account_dicts[i], result))
+                # Use actual test result from main branch logic
+                final_results.append(VPNTestResult(accounts[i], result))
         
         return final_results
     
@@ -99,5 +101,6 @@ __all__ = [
     'GitHubClient',
     'VPNTester', 
     'VPNTestResult',
-    'extract_vpn_accounts'
+    'extract_vpn_accounts',
+    'ensure_ws_path_field'
 ]
