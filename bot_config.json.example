@@ -1,0 +1,28 @@
+{
+  "_comment": "VPN Bot Configuration - Rename to bot_config.json and fill with your values",
+  
+  "github_token": "ghp_your_github_token_here",
+  "github_owner": "your-username",
+  "github_repo": "your-vpn-repo",
+  "config_file": "template.json",
+  
+  "check_interval_hours": 6,
+  "max_concurrent_tests": 5,
+  "send_only_failures": false,
+  "send_summary": true,
+  
+  "telegram_token": "your_telegram_bot_token",
+  "telegram_chat_id": "your_telegram_chat_id",
+  
+  "twilio_sid": "your_twilio_sid",
+  "twilio_token": "your_twilio_token", 
+  "whatsapp_from": "+14155238886",
+  "whatsapp_to": "+62812345678",
+  
+  "_setup_notes": {
+    "telegram": "Create bot: @BotFather, get chat_id: @userinfobot",
+    "whatsapp": "Sign up Twilio, use sandbox number +14155238886",
+    "github": "Use same token from VortexVPN Manager",
+    "intervals": "1=hourly, 6=every 6h, 24=daily checks"
+  }
+}
