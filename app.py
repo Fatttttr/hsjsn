@@ -206,11 +206,19 @@ def validate_github_config():
             json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
             
             if not json_files:
+                # USER REQUEST: Jika tidak ada JSON files, berikan opsi create config baru dari template lokal
                 return jsonify({
-                    'success': False,
-                    'message': 'No JSON configuration files found in repository',
-                    'details': 'Please add some .json files to your repository',
-                    'can_show_dropdown': False
+                    'success': True,
+                    'message': 'No JSON files found in repository. You can create a new config from local template.',
+                    'can_show_dropdown': True,
+                    'files': [],
+                    'file_count': 0,
+                    'show_create_option': True,
+                    'repo_info': {
+                        'name': connection_test.get('repo_name'),
+                        'private': connection_test.get('private', False),
+                        'branch': connection_test.get('default_branch', 'main')
+                    }
                 })
             
             print(f"✅ Found {len(json_files)} JSON files")
@@ -221,6 +229,7 @@ def validate_github_config():
                 'can_show_dropdown': True,
                 'files': json_files,
                 'file_count': len(json_files),
+                'show_create_option': False,
                 'repo_info': {
                     'name': connection_test.get('repo_name'),
                     'private': connection_test.get('private', False),
@@ -1030,6 +1039,99 @@ def debug_github():
             'debug_info': {
                 'exception_type': type(e).__name__
             }
+        })
+
+@app.route('/api/create-config-from-template', methods=['POST'])
+def create_config_from_template():
+    """Create new config file in GitHub repository from local template"""
+    try:
+        data = request.json
+        filename = data.get('filename', '').strip()
+        
+        if not filename:
+            return jsonify({
+                'success': False,
+                'message': 'Filename is required'
+            })
+        
+        # Ensure .json extension
+        if not filename.endswith('.json'):
+            filename += '.json'
+        
+        # Load GitHub config
+        config_file = 'github_config.json'
+        if not os.path.exists(config_file):
+            return jsonify({
+                'success': False,
+                'message': 'GitHub configuration not found'
+            })
+        
+        with open(config_file, 'r') as f:
+            github_config = json.load(f)
+        
+        token = github_config.get('token')
+        owner = github_config.get('owner')
+        repo = github_config.get('repo')
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'Incomplete GitHub configuration'
+            })
+        
+        # Load local template
+        if not os.path.exists(TEMPLATE_FILE):
+            return jsonify({
+                'success': False,
+                'message': f'Local template file "{TEMPLATE_FILE}" not found'
+            })
+        
+        with open(TEMPLATE_FILE, 'r') as f:
+            template_content = f.read()
+        
+        # Create GitHub client and upload template
+        github_client = GitHubClient(token, owner, repo)
+        
+        # Check if file already exists
+        existing_content, existing_sha = github_client.get_file(filename)
+        
+        if existing_content:
+            return jsonify({
+                'success': False,
+                'message': f'File "{filename}" already exists in repository',
+                'details': 'Please choose a different filename or delete the existing file first'
+            })
+        
+        # Upload template as new file
+        commit_message = f"Create new VPN configuration from template: {filename}"
+        result = github_client.update_or_create_file(
+            filename,
+            template_content,
+            commit_message,
+            None  # No SHA for new file
+        )
+        
+        if result:
+            # Store new file info in session for future use
+            session_data['github_path'] = filename
+            session_data['github_sha'] = result.get('content', {}).get('sha')
+            
+            return jsonify({
+                'success': True,
+                'message': f'Successfully created "{filename}" from local template',
+                'filename': filename,
+                'sha': session_data['github_sha']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create file in repository'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error creating config: {str(e)}'
         })
 
 def parse_servers_input(servers_input):
