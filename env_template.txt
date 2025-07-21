@@ -1,0 +1,25 @@
+# Environment Variables Template for Render.com
+# Copy each line and paste as Key=Value in Render dashboard
+
+GITHUB_TOKEN=ghp_your_real_github_token_here
+GITHUB_OWNER=Fatttttr
+GITHUB_REPO=fattt
+CHECK_INTERVAL_MINUTES=30
+MAX_CONCURRENT_TESTS=5
+TIMEOUT_SECONDS=10
+SEND_ONLY_FAILURES=false
+SEND_SUMMARY=true
+TELEGRAM_TOKEN=your_real_telegram_bot_token
+TELEGRAM_CHAT_ID=your_real_telegram_chat_id
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_real_twilio_auth_token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+WHATSAPP_TO=whatsapp:+6281234567890
+
+# Instructions:
+# 1. Replace all "your_real_xxx" with actual values
+# 2. In Render dashboard, go to Environment tab
+# 3. Add each line as separate environment variable
+# 4. Key = left side of =
+# 5. Value = right side of =
+# 6. Save changes to redeploy
