@@ -103,7 +103,7 @@ class VPNBotChecker:
                     logger.info(f"Loading config from: {filename}")
                     
                     # Get file content from GitHub
-                    file_content = self.github_client.get_file_content(filename)
+                    file_content, file_sha = self.github_client.get_file(filename)
                     if not file_content:
                         logger.error(f"Failed to load {filename} from GitHub")
                         continue
