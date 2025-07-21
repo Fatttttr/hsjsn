@@ -4,30 +4,46 @@ Penjelasan tentang bagaimana bot melakukan testing VPN accounts dan dependency y
 
 ## 🔍 Metode Testing
 
-Bot VPN Checker menggunakan **2 metode testing** tergantung ketersediaan tools:
+Bot VPN Checker menggunakan **Enhanced Testing Logic** dari branch main:
 
-### **Method 1: Socket Testing (Default - Tidak Perlu Xray)**
+### **Enhanced VPN Testing (Tidak Perlu Xray)**
 - ✅ **Tidak memerlukan Xray**
-- 🔌 **Socket-based connectivity test**
-- 🏃 **Lebih cepat dan ringan**
-- 📊 **Cek apakah server VPN dapat diakses**
+- 🧠 **Smart IP extraction dari path**
+- 🔄 **Fallback testing (path → host → sni → server)**
+- 📊 **Real geolocation lookup**
+- 🔍 **Domain cleaning untuk akurasi testing**
 
 **Yang Ditest:**
-- Host/IP reachability
-- Port connectivity  
-- Basic protocol handshake
-- Response time/latency
+1. **IP dari path** (format: `/111.222.333.444-8080`)
+2. **Host dari WebSocket headers** 
+3. **SNI/server_name dari TLS**
+4. **Server field** sebagai fallback
+5. **TCP connection testing**
+6. **ICMP ping fallback**
+7. **Real geolocation via ip-api.com**
 
-**Pro:**
-- ✅ Tidak perlu install Xray
-- ✅ Cross-platform (Windows/Linux/Mac)
-- ✅ Lebih cepat execution
-- ✅ Resource minimal
+**Testing Flow:**
+```
+Extract IP from path → TCP test → Success ✅
+     ↓ (if fail)
+Extract host → resolve IP → TCP test → Success ✅  
+     ↓ (if fail)
+Extract SNI → resolve IP → TCP test → Success ✅
+     ↓ (if fail)  
+Extract server → resolve IP → TCP test → Success ✅
+     ↓ (if fail)
+ICMP ping test → Success ✅
+     ↓ (if fail)
+Mark as Dead ❌
+```
 
-**Con:**
-- ❌ Tidak test actual VPN connection
-- ❌ Tidak mendapat real geolocation
-- ❌ Hanya connectivity check
+**Advantages:**
+- ✅ **Tidak perlu Xray** - pure Python
+- ✅ **Smart fallback testing** - multiple methods
+- ✅ **Real geolocation** - actual country/provider 
+- ✅ **Domain cleaning** - improved accuracy
+- ✅ **Retry logic** - 3x timeout before dead
+- ✅ **Concurrent testing** - fast bulk testing
 
 ### **Method 2: Real VPN Testing (Optional - Perlu Xray)**
 - 🔧 **Memerlukan Xray binary**

@@ -1,8 +1,8 @@
 import re
 import json
 import asyncio
-from converter import extract_ip_port_from_path
-from tester import test_account
+from .converter import extract_ip_port_from_path
+# Don't import test_account here to avoid circular import
 
 def clean_account_dict(account: dict) -> dict:
     return {k: v for k, v in account.items() if not k.startswith("_")}

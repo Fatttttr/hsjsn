@@ -41,3 +41,8 @@ def extract_accounts_from_config(config_data):
             accounts.append(outbound)
     
     return accounts
+
+# Alias for bot compatibility
+def extract_vpn_accounts(config_data):
+    """Extract VPN accounts - alias for extract_accounts_from_config"""
+    return extract_accounts_from_config(config_data)
