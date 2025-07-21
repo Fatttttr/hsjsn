@@ -325,10 +325,31 @@ class VPNBotChecker:
 
 def load_bot_config() -> BotConfig:
     """Load bot configuration from file or environment variables"""
-    config_file = Path("bot_config.json")
     
+    # Try environment variables first (for production deployment)
+    if os.getenv('GITHUB_TOKEN'):
+        logger.info("Loading configuration from environment variables")
+        return BotConfig(
+            github_token=os.getenv('GITHUB_TOKEN'),
+            github_owner=os.getenv('GITHUB_OWNER'),
+            github_repo=os.getenv('GITHUB_REPO'),
+            check_interval_minutes=int(os.getenv('CHECK_INTERVAL_MINUTES', '30')),
+            max_concurrent_tests=int(os.getenv('MAX_CONCURRENT_TESTS', '5')),
+            timeout_seconds=int(os.getenv('TIMEOUT_SECONDS', '10')),
+            send_only_failures=os.getenv('SEND_ONLY_FAILURES', 'false').lower() == 'true',
+            send_summary=os.getenv('SEND_SUMMARY', 'true').lower() == 'true',
+            telegram_token=os.getenv('TELEGRAM_TOKEN'),
+            telegram_chat_id=os.getenv('TELEGRAM_CHAT_ID'),
+            twilio_account_sid=os.getenv('TWILIO_ACCOUNT_SID'),
+            twilio_auth_token=os.getenv('TWILIO_AUTH_TOKEN'),
+            twilio_whatsapp_from=os.getenv('TWILIO_WHATSAPP_FROM'),
+            whatsapp_to=os.getenv('WHATSAPP_TO')
+        )
+    
+    # Fallback to config file (for local development)
+    config_file = Path("bot_config.json")
     if config_file.exists():
-        # Load from config file
+        logger.info("Loading configuration from bot_config.json")
         with open(config_file, 'r') as f:
             config_data = json.load(f)
         
@@ -336,7 +357,7 @@ def load_bot_config() -> BotConfig:
             github_token=config_data.get('github_token'),
             github_owner=config_data.get('github_owner'),
             github_repo=config_data.get('github_repo'),
-            check_interval_minutes=config_data.get('check_interval_minutes', 5),
+            check_interval_minutes=config_data.get('check_interval_minutes', 30),
             max_concurrent_tests=config_data.get('max_concurrent_tests', 5),
             timeout_seconds=config_data.get('timeout_seconds', 10),
             send_only_failures=config_data.get('send_only_failures', False),
@@ -349,23 +370,7 @@ def load_bot_config() -> BotConfig:
             whatsapp_to=config_data.get('whatsapp_to')
         )
     else:
-        # Load from environment variables
-        return BotConfig(
-            github_token=os.getenv('GITHUB_TOKEN'),
-            github_owner=os.getenv('GITHUB_OWNER'),
-            github_repo=os.getenv('GITHUB_REPO'),
-            check_interval_minutes=int(os.getenv('CHECK_INTERVAL_MINUTES', '5')),
-            max_concurrent_tests=int(os.getenv('MAX_CONCURRENT_TESTS', '5')),
-            timeout_seconds=int(os.getenv('TIMEOUT_SECONDS', '10')),
-            send_only_failures=os.getenv('SEND_ONLY_FAILURES', 'false').lower() == 'true',
-            send_summary=os.getenv('SEND_SUMMARY', 'true').lower() == 'true',
-            telegram_token=os.getenv('TELEGRAM_TOKEN'),
-            telegram_chat_id=os.getenv('TELEGRAM_CHAT_ID'),
-            twilio_account_sid=os.getenv('TWILIO_ACCOUNT_SID'),
-            twilio_auth_token=os.getenv('TWILIO_AUTH_TOKEN'),
-            twilio_whatsapp_from=os.getenv('TWILIO_WHATSAPP_FROM'),
-            whatsapp_to=os.getenv('WHATSAPP_TO')
-        )
+        raise FileNotFoundError("No configuration found. Please set environment variables or create bot_config.json")
 
 def main():
     """Main function to start the bot"""
