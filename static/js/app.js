@@ -1119,10 +1119,7 @@ function handleTestingComplete(data) {
     // Update test status
     document.getElementById('test-status').textContent = data.successful > 0 ? '✅' : '❌';
     
-    // Show notification for auto-generated config
-    if (data.successful > 0) {
-        document.getElementById('config-notification').style.display = 'block';
-    }
+    // USER REQUEST: Config notification removed
 }
 
 // Handle auto-generated configuration - dengan custom servers auto-apply
