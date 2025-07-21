@@ -80,22 +80,30 @@ async function checkTestingStatusOnLoad() {
 
 // USER REQUEST: Handle setup source change (Template vs GitHub) - Smart detect
 function handleSetupSourceChange(event) {
-    const selectedSource = event.target.value;
+    const githubFileSelection = document.getElementById('github-file-selection');
     const githubCard = document.getElementById('github-setup-card');
     const templateCard = document.getElementById('template-status-card');
-    
-    if (selectedSource === 'github') {
+
+    if (event.target.value === 'github') {
         githubCard.style.display = 'block';
         templateCard.style.display = 'none';
-        
-        // Load saved GitHub config from database
-        loadSavedGitHubConfig();
+        if (isGitHubConfigured) {
+            githubFileSelection.classList.remove('hidden');
+            githubFileSelection.style.display = 'block';
+            loadGitHubFiles();
+        } else {
+            githubFileSelection.classList.add('hidden');
+            githubFileSelection.style.display = 'none';
+            showToast('GitHub Required', 'Please configure GitHub integration first', 'warning');
+            document.querySelector('input[name="setup-source"][value="template"]').checked = true;
+            githubCard.style.display = 'none';
+            templateCard.style.display = 'block';
+        }
     } else {
+        githubFileSelection.classList.add('hidden');
+        githubFileSelection.style.display = 'none';
         githubCard.style.display = 'none';
         templateCard.style.display = 'block';
-        
-        // Show template ready status
-        showSetupStatus('Template configuration ready. Start testing to use local template.', 'success');
     }
 }
 
@@ -253,6 +261,32 @@ function setupFormHandlers() {
     
     // Upload to GitHub
     document.getElementById('upload-github-btn').addEventListener('click', uploadToGitHub);
+
+    // Create config baru dari template lokal
+    const createTemplateConfigBtn = document.getElementById('create-template-config-btn');
+    if (createTemplateConfigBtn) {
+        createTemplateConfigBtn.addEventListener('click', async function() {
+            createTemplateConfigBtn.disabled = true;
+            createTemplateConfigBtn.querySelector('.btn-text').textContent = '⏳ Membuat...';
+            try {
+                const response = await fetch('/api/load-template-config');
+                const data = await response.json();
+                if (data.success) {
+                    showToast('Config Baru', 'Config berhasil dibuat dari template lokal!', 'success');
+                    showSetupStatus('Config baru berhasil dibuat dari template lokal.', 'success');
+                } else {
+                    showToast('Gagal Membuat Config', data.message || 'Gagal membuat config dari template.', 'error');
+                    showSetupStatus('Gagal membuat config dari template lokal.', 'error');
+                }
+            } catch (error) {
+                showToast('Network Error', 'Gagal membuat config dari template (network error)', 'error');
+                showSetupStatus('Gagal membuat config dari template lokal (network error).', 'error');
+            } finally {
+                createTemplateConfigBtn.disabled = false;
+                createTemplateConfigBtn.querySelector('.btn-text').textContent = '🆕 Create Config Baru (Dari Template Lokal)';
+            }
+        });
+    }
 }
 
 // Handle configuration source change
@@ -455,6 +489,7 @@ async function loadSavedGitHubConfig() {
     try {
         const response = await fetch('/api/get-github-config');
         const data = await response.json();
+        const githubFileSelection = document.getElementById('github-file-selection');
         
         if (data.success) {
             // Auto-fill owner (from database)
@@ -471,16 +506,39 @@ async function loadSavedGitHubConfig() {
             if (data.has_token) {
                 document.getElementById('github-token').placeholder = 'Token saved (enter new token to update)';
                 updateGitHubStatus('Configured');
+                isGitHubConfigured = true;
+                // Tampilkan dropdown file dan load file
+                if (githubFileSelection) {
+                    githubFileSelection.classList.remove('hidden');
+                    githubFileSelection.style.display = 'block';
+                    loadGitHubFiles();
+                }
             } else {
                 updateGitHubStatus('Token Required');
+                isGitHubConfigured = false;
+                if (githubFileSelection) {
+                    githubFileSelection.classList.add('hidden');
+                    githubFileSelection.style.display = 'none';
+                }
             }
         } else {
             console.log('No saved GitHub config found');
             updateGitHubStatus('Not Configured');
+            isGitHubConfigured = false;
+            if (githubFileSelection) {
+                githubFileSelection.classList.add('hidden');
+                githubFileSelection.style.display = 'none';
+            }
         }
     } catch (error) {
         console.error('Error loading GitHub config:', error);
         updateGitHubStatus('Error');
+        isGitHubConfigured = false;
+        const githubFileSelection = document.getElementById('github-file-selection');
+        if (githubFileSelection) {
+            githubFileSelection.classList.add('hidden');
+            githubFileSelection.style.display = 'none';
+        }
     }
 }
 
