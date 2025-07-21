@@ -174,29 +174,70 @@ def validate_github_config():
                 'can_show_dropdown': False
             })
         
-        # Test GitHub connection
-        github_client = GitHubClient(token, owner, repo)
-        files = github_client.list_files_in_repo()
+        print(f"🔍 Validating GitHub config: {owner}/{repo}")
         
-        if not files:
+        # Create GitHub client and test connection
+        github_client = GitHubClient(token, owner, repo)
+        connection_test = github_client.test_connection()
+        
+        if not connection_test['success']:
+            print(f"❌ GitHub connection failed: {connection_test['error']}")
             return jsonify({
                 'success': False,
-                'message': 'Cannot connect to GitHub repository',
+                'message': connection_test['error'],
+                'details': connection_test.get('details', ''),
                 'can_show_dropdown': False
             })
         
-        # Filter JSON files
-        json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
+        print(f"✅ GitHub connection successful: {connection_test}")
         
-        return jsonify({
-            'success': True,
-            'message': 'GitHub configuration is valid',
-            'can_show_dropdown': True,
-            'files': json_files,
-            'file_count': len(json_files)
-        })
+        # If connection successful, try to list files
+        try:
+            files = github_client.list_files_in_repo()
+            
+            if not files:
+                return jsonify({
+                    'success': False,
+                    'message': 'Repository is empty or no files found',
+                    'can_show_dropdown': False
+                })
+            
+            # Filter JSON files
+            json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
+            
+            if not json_files:
+                return jsonify({
+                    'success': False,
+                    'message': 'No JSON configuration files found in repository',
+                    'details': 'Please add some .json files to your repository',
+                    'can_show_dropdown': False
+                })
+            
+            print(f"✅ Found {len(json_files)} JSON files")
+            
+            return jsonify({
+                'success': True,
+                'message': f'GitHub configuration is valid. Found {len(json_files)} JSON files.',
+                'can_show_dropdown': True,
+                'files': json_files,
+                'file_count': len(json_files),
+                'repo_info': {
+                    'name': connection_test.get('repo_name'),
+                    'private': connection_test.get('private', False),
+                    'branch': connection_test.get('default_branch', 'main')
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ Error listing files: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Connected to repository but failed to list files: {str(e)}',
+                'can_show_dropdown': False
+            })
         
     except Exception as e:
+        print(f"❌ GitHub validation error: {e}")
         return jsonify({
             'success': False,
             'message': f'GitHub validation failed: {str(e)}',
@@ -924,6 +965,72 @@ def apply_server_replacement():
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'Storage error: {str(e)}'})
+
+@app.route('/api/debug-github', methods=['POST'])
+def debug_github():
+    """Debug endpoint untuk test GitHub connection"""
+    try:
+        data = request.json
+        token = data.get('token', '').strip()
+        owner = data.get('owner', '').strip()
+        repo = data.get('repo', '').strip()
+        
+        print(f"🔍 DEBUG GitHub connection:")
+        print(f"   Token: {token[:10]}...{token[-4:] if len(token) > 14 else '****'}")
+        print(f"   Owner: {owner}")
+        print(f"   Repo: {repo}")
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'Missing required fields',
+                'debug_info': {
+                    'has_token': bool(token),
+                    'has_owner': bool(owner),
+                    'has_repo': bool(repo)
+                }
+            })
+        
+        # Test different GitHub API endpoints
+        github_client = GitHubClient(token, owner, repo)
+        
+        # Test 1: Basic connection
+        connection_result = github_client.test_connection()
+        
+        # Test 2: List files if connection works
+        files_result = None
+        if connection_result['success']:
+            try:
+                files = github_client.list_files_in_repo()
+                files_result = {
+                    'success': True,
+                    'file_count': len(files),
+                    'files': files[:5] if files else []  # First 5 files only
+                }
+            except Exception as e:
+                files_result = {
+                    'success': False,
+                    'error': str(e)
+                }
+        
+        return jsonify({
+            'success': True,
+            'debug_info': {
+                'connection_test': connection_result,
+                'files_test': files_result,
+                'api_url': github_client.api_url,
+                'headers': {k: v for k, v in github_client.headers.items() if k != 'Authorization'}
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'debug_info': {
+                'exception_type': type(e).__name__
+            }
+        })
 
 def parse_servers_input(servers_input):
     """Parse server input (comma or line separated)"""

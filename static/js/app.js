@@ -267,6 +267,9 @@ function setupFormHandlers() {
     // GitHub setup
     document.getElementById('setup-github-btn').addEventListener('click', setupGitHub);
     
+    // Debug GitHub
+    document.getElementById('debug-github-btn').addEventListener('click', debugGitHub);
+    
     // Template setup - USER REQUEST: Smart detect, no manual load button
     
     // Add links and test
@@ -433,7 +436,16 @@ async function setupGitHub() {
                 // USER REQUEST: Auto-show dropdown dengan files yang sudah dimuat
                 if (validateData.files && validateData.files.length > 0) {
                     showGitHubDropdown(validateData.files);
-                    showSetupStatus(`GitHub configured. Found ${validateData.file_count} JSON files. Select a file to start testing.`, 'success');
+                    
+                    // Show additional repo info if available
+                    const repoInfo = validateData.repo_info || {};
+                    const repoDetails = repoInfo.private ? '🔒 Private' : '🌐 Public';
+                    const branchInfo = repoInfo.branch ? ` (${repoInfo.branch})` : '';
+                    
+                    showSetupStatus(
+                        `✅ GitHub configured: ${validateData.file_count} JSON files found in ${repoDetails} repository${branchInfo}. Select a file to start testing.`, 
+                        'success'
+                    );
                 } else {
                     showSetupStatus('GitHub configured successfully. Start testing to automatically use GitHub config.', 'success');
                 }
@@ -441,12 +453,38 @@ async function setupGitHub() {
                 updateGitHubStatus('Error');
                 showToast('Save Failed', data.message, 'error');
                 updateStatus('GitHub save failed', 'error');
+                showSetupStatus(`GitHub save failed: ${data.message}`, 'error');
             }
         } else {
             updateGitHubStatus('Error');
-            showToast('GitHub Validation Failed', validateData.message, 'error');
+            
+            // Enhanced error display with details
+            const errorMessage = validateData.message || 'GitHub validation failed';
+            const errorDetails = validateData.details ? `\n\nDetails: ${validateData.details}` : '';
+            
+            // Show specific guidance based on error type
+            let guidanceMessage = '';
+            if (errorMessage.includes('Invalid GitHub token')) {
+                guidanceMessage = '\n\n💡 Quick Fix:\n1. Go to GitHub → Settings → Developer settings → Personal access tokens\n2. Create new token with "repo" permissions\n3. Copy and paste the new token here';
+            } else if (errorMessage.includes('not found')) {
+                guidanceMessage = '\n\n💡 Quick Fix:\n1. Check repository owner and name (case-sensitive)\n2. Ensure repository exists and is accessible\n3. For private repos, ensure token has access';
+            } else if (errorMessage.includes('No JSON')) {
+                guidanceMessage = '\n\n💡 Quick Fix:\n1. Add at least one .json file to your repository\n2. Common names: config.json, template.json\n3. Ensure files are in root directory';
+            }
+            
+            showToast('GitHub Validation Failed', errorMessage + guidanceMessage, 'error');
             updateStatus('GitHub validation failed', 'error');
-            showSetupStatus(`GitHub validation failed: ${validateData.message}`, 'error');
+            
+            const statusMessage = `❌ ${errorMessage}${errorDetails ? '. ' + validateData.details : ''}`;
+            const troubleshootLink = '\n\n📖 See TROUBLESHOOT_GITHUB.md for detailed solutions';
+            showSetupStatus(statusMessage + troubleshootLink, 'error');
+            
+            // Log detailed error for debugging
+            console.error('GitHub validation failed:', {
+                message: validateData.message,
+                details: validateData.details,
+                can_show_dropdown: validateData.can_show_dropdown
+            });
         }
     } catch (error) {
         console.error('GitHub setup error:', error);
@@ -1418,6 +1456,118 @@ async function uploadToGitHub() {
         setButtonLoading('upload-github-btn', false);
     }
 }
+
+// Debug GitHub
+async function debugGitHub() {
+    const token = document.getElementById('github-token').value.trim();
+    const owner = document.getElementById('github-owner').value.trim();
+    const repo = document.getElementById('github-repo').value.trim();
+
+    if (!token || !owner || !repo) {
+        showToast('Missing Information', 'Please fill in all GitHub fields', 'warning');
+        return;
+    }
+
+    setButtonLoading('debug-github-btn', true);
+    updateStatus('Debugging GitHub...', 'info');
+
+    try {
+        const response = await fetch('/api/debug-github', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ token, owner, repo }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            console.log('🔍 GitHub Debug Results:', data.debug_info);
+            
+            const debugInfo = data.debug_info;
+            const connectionTest = debugInfo.connection_test;
+            const filesTest = debugInfo.files_test;
+            
+            // Format debug results for display
+            let debugMessage = '';
+            if (connectionTest.success) {
+                debugMessage = `✅ Connection: SUCCESS\n`;
+                debugMessage += `📁 Repository: ${connectionTest.repo_name}\n`;
+                debugMessage += `🔒 Private: ${connectionTest.private ? 'Yes' : 'No'}\n`;
+                debugMessage += `🌿 Branch: ${connectionTest.default_branch}\n`;
+                
+                if (filesTest) {
+                    if (filesTest.success) {
+                        debugMessage += `📄 Files: ${filesTest.file_count} found`;
+                    } else {
+                        debugMessage += `❌ Files: Error - ${filesTest.error}`;
+                    }
+                }
+            } else {
+                debugMessage = `❌ Connection: FAILED\n`;
+                debugMessage += `Error: ${connectionTest.error}\n`;
+                if (connectionTest.details) {
+                    debugMessage += `Details: ${connectionTest.details}`;
+                }
+            }
+            
+            showToast('GitHub Debug Results', debugMessage, connectionTest.success ? 'success' : 'error');
+            updateStatus('Debug completed', 'info');
+            
+            // Show detailed debug in status
+            showSetupStatus(debugMessage.replace(/\n/g, '. '), connectionTest.success ? 'success' : 'error');
+        } else {
+            console.error('🔍 GitHub Debug Error:', data);
+            showToast('Debug Failed', data.error || 'Unknown error', 'error');
+            updateStatus('Debug failed', 'error');
+            showSetupStatus(`Debug failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+    } catch (error) {
+        console.error('Debug GitHub error:', error);
+        showToast('Network Error', 'Failed to debug GitHub', 'error');
+        updateStatus('Network error', 'error');
+        logActivity('GitHub Debug Network Error');
+    } finally {
+        setButtonLoading('debug-github-btn', false);
+    }
+}
+
+// Show token help modal/guidance
+function showTokenHelp() {
+    const helpMessage = `
+🔑 GitHub Token Setup Guide:
+
+1️⃣ Go to GitHub Settings:
+   GitHub.com → Profile → Settings → Developer settings
+
+2️⃣ Create Personal Access Token:
+   → Personal access tokens → Tokens (classic)
+   → Generate new token (classic)
+
+3️⃣ Configure Token:
+   Name: "VortexVPN Manager"
+   Scopes: ✅ repo (full repository access)
+   Expiration: 90 days (recommended)
+
+4️⃣ Copy Token:
+   ⚠️ Copy immediately - you won't see it again!
+   Format: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+5️⃣ Test Here:
+   Paste token → Fill owner/repo → Save GitHub Config
+
+🔗 Direct link: https://github.com/settings/tokens/new
+
+❓ Still having issues? Check TROUBLESHOOT_GITHUB.md
+    `;
+    
+    showToast('GitHub Token Help', helpMessage, 'info');
+    return false; // Prevent link navigation
+}
+
+// Make function globally available
+window.showTokenHelp = showTokenHelp;
 
 // Mobile-specific enhancements
 if ('serviceWorker' in navigator) {

@@ -95,7 +95,9 @@
                         <div class="form-group">
                             <label for="github-token">GitHub Token</label>
                             <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
-                            <small>Personal access token with repo permissions</small>
+                            <small>Personal access token with <strong>repo</strong> permissions. 
+                            <a href="https://github.com/settings/tokens/new" target="_blank" style="color: var(--primary);">Create new token</a> | 
+                            <a href="#" onclick="showTokenHelp()" style="color: var(--info);">Need help?</a></small>
                         </div>
                         <div class="form-group">
                             <label for="github-owner">Repository Owner</label>
@@ -123,6 +125,15 @@
                             <span class="btn-text">💾 Save GitHub Config</span>
                             <div class="btn-loader hidden"></div>
                         </button>
+                        
+                        <!-- Debug GitHub button -->
+                        <button class="btn btn-secondary" id="debug-github-btn" style="margin-top: 0.5rem;">
+                            <span class="btn-text">🔍 Debug GitHub Connection</span>
+                            <div class="btn-loader hidden"></div>
+                        </button>
+                        <small style="color: var(--text-muted); margin-top: 0.25rem; display: block;">
+                            Use debug button if connection fails to get detailed error information
+                        </small>
                     </div>
                 </div>
 
