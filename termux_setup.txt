@@ -1,0 +1,32 @@
+# VPN Bot Setup di Android Termux
+
+## Install Termux:
+1. Install Termux dari F-Droid atau Play Store
+2. Open Termux
+
+## Setup Bot:
+pkg update
+pkg install python git
+git clone https://github.com/Fatttttr/hsjsn.git
+cd hsjsn
+git checkout bot-vpn-checker
+pip install -r bot_requirements.txt
+
+## Edit Config:
+nano bot_config.json
+# Isi dengan credentials Anda
+
+## Run Persistent:
+termux-wake-lock  # Prevent Android sleep
+python bot_vpn_checker.py
+
+## Background Running:
+# Install tmux untuk background session:
+pkg install tmux
+tmux new -s vpn-bot
+python bot_vpn_checker.py
+# Ctrl+B, D untuk detach
+# tmux attach -t vpn-bot untuk kembali
+
+## Auto-Start on Boot (Optional):
+echo "cd ~/hsjsn && python bot_vpn_checker.py" > ~/.bashrc

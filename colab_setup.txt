@@ -1,0 +1,47 @@
+# VPN Bot di Google Colab (Free Cloud)
+
+## Setup Steps:
+1. Go to: https://colab.research.google.com/
+2. New Notebook
+3. Paste this code:
+
+```python
+# Install dependencies
+!pip install requests schedule pyTelegramBotAPI twilio
+
+# Clone repository
+!git clone https://github.com/Fatttttr/hsjsn.git
+%cd hsjsn
+!git checkout bot-vpn-checker
+
+# Setup credentials
+import os
+os.environ['GITHUB_TOKEN'] = 'ghp_your_token_here'
+os.environ['GITHUB_OWNER'] = 'Fatttttr'
+os.environ['GITHUB_REPO'] = 'fattt'
+os.environ['CHECK_INTERVAL_MINUTES'] = '60'
+os.environ['TELEGRAM_TOKEN'] = 'your_telegram_token'
+os.environ['TELEGRAM_CHAT_ID'] = 'your_chat_id'
+
+# Run bot
+!python bot_vpn_checker.py
+```
+
+## Advantages:
+- ✅ Free Google cloud computing
+- ✅ No local resources needed
+- ✅ Easy to setup
+- ⚠️ Session disconnects after ~12 hours
+- ⚠️ Need to restart manually
+
+## Keep Running:
+Use this code to run longer:
+```python
+import time
+while True:
+    try:
+        exec(open('bot_vpn_checker.py').read())
+    except:
+        print("Restarting in 60 seconds...")
+        time.sleep(60)
+```
