@@ -1,0 +1,20 @@
+{
+  "github_token": "your_token_here",
+  "github_owner": "Fatttttr", 
+  "github_repo": "fattt",
+  
+  "check_interval_minutes": 60,
+  "max_concurrent_tests": 2,
+  "timeout_seconds": 5,
+  
+  "send_only_failures": true,
+  "send_summary": false,
+  
+  "telegram_token": "your_telegram_token",
+  "telegram_chat_id": "your_chat_id",
+  
+  "twilio_account_sid": null,
+  "twilio_auth_token": null,
+  "twilio_whatsapp_from": null,
+  "whatsapp_to": null
+}
