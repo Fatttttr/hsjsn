@@ -117,16 +117,141 @@ def setup_github():
     else:
         return jsonify({'success': False, 'message': 'All fields are required'})
 
-# Removed duplicate endpoint - using new implementation below
-
 @app.route('/api/list-github-files')
 def list_github_files():
-    if not session_data['github_client']:
-        return jsonify({'success': False, 'message': 'GitHub not configured'})
-    
-    files = session_data['github_client'].list_files_in_repo()
-    json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
-    return jsonify({'success': True, 'files': json_files})
+    """List GitHub files untuk dropdown (dengan validasi)"""
+    try:
+        # Load GitHub config from file
+        config_file = 'github_config.json'
+        if not os.path.exists(config_file):
+            return jsonify({'success': False, 'message': 'GitHub config not found'})
+        
+        with open(config_file, 'r') as f:
+            github_config = json.load(f)
+        
+        token = github_config.get('token')
+        owner = github_config.get('owner')
+        repo = github_config.get('repo')
+        
+        if not all([token, owner, repo]):
+            return jsonify({'success': False, 'message': 'Incomplete GitHub configuration'})
+        
+        # Create GitHub client and list files
+        github_client = GitHubClient(token, owner, repo)
+        files = github_client.list_files_in_repo()
+        
+        if not files:
+            return jsonify({'success': False, 'message': 'No files found or connection failed'})
+        
+        # Filter only JSON files
+        json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
+        
+        if not json_files:
+            return jsonify({'success': False, 'message': 'No JSON files found in repository'})
+        
+        return jsonify({
+            'success': True, 
+            'files': json_files,
+            'total': len(json_files)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error listing GitHub files: {str(e)}'})
+
+@app.route('/api/validate-github-config', methods=['POST'])
+def validate_github_config():
+    """Validate GitHub configuration and auto-load files untuk dropdown"""
+    try:
+        data = request.json
+        token = data.get('token', '').strip()
+        owner = data.get('owner', '').strip()
+        repo = data.get('repo', '').strip()
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'All fields are required',
+                'can_show_dropdown': False
+            })
+        
+        print(f"🔍 Validating GitHub config: {owner}/{repo}")
+        
+        # Create GitHub client and test connection
+        github_client = GitHubClient(token, owner, repo)
+        connection_test = github_client.test_connection()
+        
+        if not connection_test['success']:
+            print(f"❌ GitHub connection failed: {connection_test['error']}")
+            return jsonify({
+                'success': False,
+                'message': connection_test['error'],
+                'details': connection_test.get('details', ''),
+                'can_show_dropdown': False
+            })
+        
+        print(f"✅ GitHub connection successful: {connection_test}")
+        
+        # If connection successful, try to list files
+        try:
+            files = github_client.list_files_in_repo()
+            
+            if not files:
+                return jsonify({
+                    'success': False,
+                    'message': 'Repository is empty or no files found',
+                    'can_show_dropdown': False
+                })
+            
+            # Filter JSON files
+            json_files = [f for f in files if f.get('type') == 'file' and f.get('name', '').endswith('.json')]
+            
+            if not json_files:
+                # USER REQUEST: Jika tidak ada JSON files, berikan opsi create config baru dari template lokal
+                return jsonify({
+                    'success': True,
+                    'message': 'No JSON files found in repository. You can create a new config from local template.',
+                    'can_show_dropdown': True,
+                    'files': [],
+                    'file_count': 0,
+                    'show_create_option': True,
+                    'repo_info': {
+                        'name': connection_test.get('repo_name'),
+                        'private': connection_test.get('private', False),
+                        'branch': connection_test.get('default_branch', 'main')
+                    }
+                })
+            
+            print(f"✅ Found {len(json_files)} JSON files")
+            
+            return jsonify({
+                'success': True,
+                'message': f'GitHub configuration is valid. Found {len(json_files)} JSON files.',
+                'can_show_dropdown': True,
+                'files': json_files,
+                'file_count': len(json_files),
+                'show_create_option': False,
+                'repo_info': {
+                    'name': connection_test.get('repo_name'),
+                    'private': connection_test.get('private', False),
+                    'branch': connection_test.get('default_branch', 'main')
+                }
+            })
+            
+        except Exception as e:
+            print(f"❌ Error listing files: {e}")
+            return jsonify({
+                'success': False,
+                'message': f'Connected to repository but failed to list files: {str(e)}',
+                'can_show_dropdown': False
+            })
+        
+    except Exception as e:
+        print(f"❌ GitHub validation error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'GitHub validation failed: {str(e)}',
+            'can_show_dropdown': False
+        })
 
 @app.route('/api/load-config', methods=['POST'])
 def load_config():
@@ -136,10 +261,29 @@ def load_config():
     try:
         if source == 'github':
             file_path = data.get('file_path')
-            if not session_data['github_client'] or not file_path:
-                return jsonify({'success': False, 'message': 'GitHub client not configured or file path missing'})
+            if not file_path:
+                return jsonify({'success': False, 'message': 'GitHub file path required'})
             
-            content, sha = session_data['github_client'].get_file(file_path)
+            # Load GitHub config from file (since session might not have github_client)
+            config_file = 'github_config.json'
+            if not os.path.exists(config_file):
+                return jsonify({'success': False, 'message': 'GitHub configuration not found'})
+            
+            with open(config_file, 'r') as f:
+                github_config = json.load(f)
+            
+            token = github_config.get('token')
+            owner = github_config.get('owner')
+            repo = github_config.get('repo')
+            
+            if not all([token, owner, repo]):
+                return jsonify({'success': False, 'message': 'Incomplete GitHub configuration'})
+            
+            # Create GitHub client and load file
+            github_client = GitHubClient(token, owner, repo)
+            session_data['github_client'] = github_client  # Store for later use
+            
+            content, sha = github_client.get_file(file_path)
             if content:
                 config_data = json.loads(content)
                 session_data['github_path'] = file_path
@@ -160,8 +304,9 @@ def load_config():
         
         return jsonify({
             'success': True, 
-            'message': f'Loaded {len(session_data["all_accounts"])} existing accounts',
-            'account_count': len(session_data['all_accounts'])
+            'message': f'Loaded {len(session_data["all_accounts"])} existing accounts from {source}',
+            'account_count': len(session_data['all_accounts']),
+            'source': source
         })
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error loading config: {str(e)}'})
@@ -642,35 +787,37 @@ def get_testing_status():
             'accounts_count': len(session_data['all_accounts'])
         })
 
-@app.route('/api/load-template-config')
+@app.route('/api/load-template-config', methods=['GET'])
 def load_template_config():
-    """USER REQUEST: Load local template configuration"""
+    """Load template configuration dari file lokal"""
     try:
-        import os
-        template_path = os.path.join(os.getcwd(), 'template.json')
-        
-        if os.path.exists(template_path):
-            with open(template_path, 'r') as f:
-                template_config = json.load(f)
-            
-            # Store in session
-            session_data['template_config'] = template_config
-            
-            return jsonify({
-                'success': True,
-                'message': 'Template configuration loaded successfully',
-                'config': template_config
-            })
-        else:
+        if not os.path.exists(TEMPLATE_FILE):
             return jsonify({
                 'success': False,
-                'message': 'Template file not found. Please ensure template.json exists.'
+                'message': f'Template file "{TEMPLATE_FILE}" not found'
             })
-    
+        
+        with open(TEMPLATE_FILE, 'r') as f:
+            config_data = json.load(f)
+        
+        # Extract existing accounts untuk session
+        existing_accounts = extract_accounts_from_config(config_data)
+        existing_accounts = ensure_ws_path_field(existing_accounts)
+        session_data['all_accounts'] = existing_accounts if isinstance(existing_accounts, list) else []
+        session_data['github_path'] = None
+        session_data['github_sha'] = None
+        
+        return jsonify({
+            'success': True,
+            'message': f'Template loaded with {len(session_data["all_accounts"])} existing accounts',
+            'account_count': len(session_data['all_accounts']),
+            'source': 'template'
+        })
+        
     except Exception as e:
         return jsonify({
             'success': False,
-            'message': f'Failed to load template: {str(e)}'
+            'message': f'Error loading template: {str(e)}'
         })
 
 @app.route('/api/get-github-config')
@@ -827,6 +974,165 @@ def apply_server_replacement():
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'Storage error: {str(e)}'})
+
+@app.route('/api/debug-github', methods=['POST'])
+def debug_github():
+    """Debug endpoint untuk test GitHub connection"""
+    try:
+        data = request.json
+        token = data.get('token', '').strip()
+        owner = data.get('owner', '').strip()
+        repo = data.get('repo', '').strip()
+        
+        print(f"🔍 DEBUG GitHub connection:")
+        print(f"   Token: {token[:10]}...{token[-4:] if len(token) > 14 else '****'}")
+        print(f"   Owner: {owner}")
+        print(f"   Repo: {repo}")
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'Missing required fields',
+                'debug_info': {
+                    'has_token': bool(token),
+                    'has_owner': bool(owner),
+                    'has_repo': bool(repo)
+                }
+            })
+        
+        # Test different GitHub API endpoints
+        github_client = GitHubClient(token, owner, repo)
+        
+        # Test 1: Basic connection
+        connection_result = github_client.test_connection()
+        
+        # Test 2: List files if connection works
+        files_result = None
+        if connection_result['success']:
+            try:
+                files = github_client.list_files_in_repo()
+                files_result = {
+                    'success': True,
+                    'file_count': len(files),
+                    'files': files[:5] if files else []  # First 5 files only
+                }
+            except Exception as e:
+                files_result = {
+                    'success': False,
+                    'error': str(e)
+                }
+        
+        return jsonify({
+            'success': True,
+            'debug_info': {
+                'connection_test': connection_result,
+                'files_test': files_result,
+                'api_url': github_client.api_url,
+                'headers': {k: v for k, v in github_client.headers.items() if k != 'Authorization'}
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'debug_info': {
+                'exception_type': type(e).__name__
+            }
+        })
+
+@app.route('/api/create-config-from-template', methods=['POST'])
+def create_config_from_template():
+    """Create new config file in GitHub repository from local template"""
+    try:
+        data = request.json
+        filename = data.get('filename', '').strip()
+        
+        if not filename:
+            return jsonify({
+                'success': False,
+                'message': 'Filename is required'
+            })
+        
+        # Ensure .json extension
+        if not filename.endswith('.json'):
+            filename += '.json'
+        
+        # Load GitHub config
+        config_file = 'github_config.json'
+        if not os.path.exists(config_file):
+            return jsonify({
+                'success': False,
+                'message': 'GitHub configuration not found'
+            })
+        
+        with open(config_file, 'r') as f:
+            github_config = json.load(f)
+        
+        token = github_config.get('token')
+        owner = github_config.get('owner')
+        repo = github_config.get('repo')
+        
+        if not all([token, owner, repo]):
+            return jsonify({
+                'success': False,
+                'message': 'Incomplete GitHub configuration'
+            })
+        
+        # Load local template
+        if not os.path.exists(TEMPLATE_FILE):
+            return jsonify({
+                'success': False,
+                'message': f'Local template file "{TEMPLATE_FILE}" not found'
+            })
+        
+        with open(TEMPLATE_FILE, 'r') as f:
+            template_content = f.read()
+        
+        # Create GitHub client and upload template
+        github_client = GitHubClient(token, owner, repo)
+        
+        # Check if file already exists
+        existing_content, existing_sha = github_client.get_file(filename)
+        
+        if existing_content:
+            return jsonify({
+                'success': False,
+                'message': f'File "{filename}" already exists in repository',
+                'details': 'Please choose a different filename or delete the existing file first'
+            })
+        
+        # Upload template as new file
+        commit_message = f"Create new VPN configuration from template: {filename}"
+        result = github_client.update_or_create_file(
+            filename,
+            template_content,
+            commit_message,
+            None  # No SHA for new file
+        )
+        
+        if result:
+            # Store new file info in session for future use
+            session_data['github_path'] = filename
+            session_data['github_sha'] = result.get('content', {}).get('sha')
+            
+            return jsonify({
+                'success': True,
+                'message': f'Successfully created "{filename}" from local template',
+                'filename': filename,
+                'sha': session_data['github_sha']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Failed to create file in repository'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error creating config: {str(e)}'
+        })
 
 def parse_servers_input(servers_input):
     """Parse server input (comma or line separated)"""

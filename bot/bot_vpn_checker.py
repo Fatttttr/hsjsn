@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""
+🤖 VPN Bot Checker
+Automated VPN account monitoring bot for Telegram/WhatsApp notifications.
+
+This bot monitors VPN accounts from a GitHub repository and sends simple
+live/dead status reports at scheduled intervals.
+"""
+
+import asyncio
+import json
+import logging
+import os
+import schedule
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, List, Any, Optional
+from pathlib import Path
+
+import requests
+from telebot import TeleBot
+from twilio.rest import Client as TwilioClient
+
+# Import VPN testing modules
+from core import GitHubClient, VPNTester, extract_vpn_accounts
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+@dataclass
+class BotConfig:
+    """Bot configuration settings"""
+    # GitHub settings
+    github_token: str
+    github_owner: str
+    github_repo: str
+    config_file: str = "template.json"
+    
+    # Testing settings
+    check_interval_minutes: int = 5
+    max_concurrent_tests: int = 5
+    timeout_seconds: int = 10
+    
+    # Notification settings
+    send_only_failures: bool = False
+    send_summary: bool = True
+    
+    # Telegram settings (optional)
+    telegram_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    
+    # WhatsApp settings (optional)
+    twilio_account_sid: Optional[str] = None
+    twilio_auth_token: Optional[str] = None
+    twilio_whatsapp_from: Optional[str] = None
+    whatsapp_to: Optional[str] = None
+
+class VPNBotChecker:
+    """Main bot class for automated VPN monitoring"""
+    
+    def __init__(self, config: BotConfig):
+        self.config = config
+        self.github_client = GitHubClient(
+            token=config.github_token,
+            owner=config.github_owner,
+            repo=config.github_repo
+        )
+        
+        # Initialize notification clients
+        self.telegram_bot = None
+        self.twilio_client = None
+        
+        if config.telegram_token:
+            self.telegram_bot = TeleBot(config.telegram_token)
+            
+        if config.twilio_account_sid and config.twilio_auth_token:
+            self.twilio_client = TwilioClient(
+                config.twilio_account_sid,
+                config.twilio_auth_token
+            )
+    
+    async def load_accounts_from_github(self) -> List[str]:
+        """Load VPN accounts from GitHub repository"""
+        try:
+            logger.info(f"Loading config from GitHub: {self.config.config_file}")
+            
+            # Get file content from GitHub
+            file_content = self.github_client.get_file_content(self.config.config_file)
+            if not file_content:
+                logger.error(f"Failed to load {self.config.config_file} from GitHub")
+                return []
+            
+            # Parse JSON content
+            config_data = json.loads(file_content)
+            
+            # Extract VPN accounts using the same logic as VortexVPN Manager
+            accounts = extract_vpn_accounts(config_data)
+            
+            logger.info(f"Loaded {len(accounts)} VPN accounts from GitHub")
+            return accounts
+            
+        except Exception as e:
+            logger.error(f"Error loading accounts from GitHub: {str(e)}")
+            return []
+    
+    async def test_accounts(self, accounts: List[str]) -> Dict[str, Any]:
+        """Test VPN accounts and return results"""
+        if not accounts:
+            return {
+                'successful': 0,
+                'failed': 0,
+                'total': 0,
+                'success_rate': 0.0,
+                'test_time': datetime.now().strftime('%H:%M:%S')
+            }
+        
+        logger.info(f"Testing {len(accounts)} VPN accounts...")
+        
+        tester = VPNTester(
+            max_concurrent=self.config.max_concurrent_tests,
+            timeout=self.config.timeout_seconds
+        )
+        
+        # Test accounts concurrently
+        results = await tester.test_multiple_accounts(accounts)
+        
+        # Count successful and failed tests
+        successful = sum(1 for result in results if result.is_working)
+        failed = len(results) - successful
+        total = len(results)
+        success_rate = (successful / total * 100) if total > 0 else 0.0
+        
+        return {
+            'successful': successful,
+            'failed': failed,
+            'total': total,
+            'success_rate': success_rate,
+            'test_time': datetime.now().strftime('%H:%M:%S'),
+            'results': results
+        }
+    
+    def format_summary_message(self, results: Dict[str, Any]) -> str:
+        """Format simple summary message for notifications"""
+        successful = results['successful']
+        failed = results['failed']
+        total = results['total']
+        success_rate = results['success_rate']
+        check_time = results['test_time']
+        
+        # Simple summary message as requested
+        summary = f"🔍 VPN Status Report - {check_time}\n\n"
+        summary += f"✅ Akun Hidup: {successful}\n"
+        summary += f"❌ Akun Mati: {failed}\n"
+        summary += f"📦 Total: {total}\n\n"
+        
+        if total > 0:
+            summary += f"📊 {success_rate:.0f}% akun masih berfungsi\n\n"
+        
+        summary += f"🔄 Cek otomatis setiap {self.config.check_interval_minutes} menit"
+        
+        return summary
+    
+    async def send_telegram_notification(self, message: str):
+        """Send notification via Telegram"""
+        if not self.telegram_bot or not self.config.telegram_chat_id:
+            return
+            
+        try:
+            self.telegram_bot.send_message(
+                chat_id=self.config.telegram_chat_id,
+                text=message,
+                parse_mode='HTML'
+            )
+            logger.info("Telegram notification sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send Telegram notification: {str(e)}")
+    
+    async def send_whatsapp_notification(self, message: str):
+        """Send notification via WhatsApp"""
+        if not self.twilio_client or not self.config.whatsapp_to:
+            return
+            
+        try:
+            self.twilio_client.messages.create(
+                from_=self.config.twilio_whatsapp_from,
+                to=self.config.whatsapp_to,
+                body=message
+            )
+            logger.info("WhatsApp notification sent successfully")
+        except Exception as e:
+            logger.error(f"Failed to send WhatsApp notification: {str(e)}")
+    
+    async def send_notifications(self, message: str):
+        """Send notifications to all configured platforms"""
+        await asyncio.gather(
+            self.send_telegram_notification(message),
+            self.send_whatsapp_notification(message),
+            return_exceptions=True
+        )
+    
+    async def run_check(self):
+        """Run a single VPN check cycle"""
+        try:
+            logger.info("Starting VPN check cycle...")
+            
+            # Load accounts from GitHub
+            accounts = await self.load_accounts_from_github()
+            
+            if not accounts:
+                logger.warning("No VPN accounts found, skipping check")
+                return
+            
+            # Test accounts
+            results = await self.test_accounts(accounts)
+            
+            # Format and send summary message
+            if self.config.send_summary:
+                summary_message = self.format_summary_message(results)
+                await self.send_notifications(summary_message)
+            
+            logger.info(f"Check completed: {results['successful']}/{results['total']} accounts working")
+            
+        except Exception as e:
+            logger.error(f"Error during check cycle: {str(e)}")
+    
+    def start_scheduler(self):
+        """Start the scheduled checking"""
+        logger.info(f"Starting VPN Bot Checker with {self.config.check_interval_minutes} minute intervals")
+        
+        # Schedule the check
+        schedule.every(self.config.check_interval_minutes).minutes.do(
+            lambda: asyncio.run(self.run_check())
+        )
+        
+        logger.info("Bot scheduler started. Press Ctrl+C to stop.")
+        
+        # Run initial check
+        asyncio.run(self.run_check())
+        
+        # Keep running scheduled checks
+        while True:
+            schedule.run_pending()
+            time.sleep(30)  # Check every 30 seconds for scheduled tasks
+
+def load_bot_config() -> BotConfig:
+    """Load bot configuration from file or environment variables"""
+    config_file = Path("bot_config.json")
+    
+    if config_file.exists():
+        # Load from config file
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+        
+        return BotConfig(
+            github_token=config_data.get('github_token'),
+            github_owner=config_data.get('github_owner'),
+            github_repo=config_data.get('github_repo'),
+            config_file=config_data.get('config_file', 'template.json'),
+            check_interval_minutes=config_data.get('check_interval_minutes', 5),
+            max_concurrent_tests=config_data.get('max_concurrent_tests', 5),
+            timeout_seconds=config_data.get('timeout_seconds', 10),
+            send_only_failures=config_data.get('send_only_failures', False),
+            send_summary=config_data.get('send_summary', True),
+            telegram_token=config_data.get('telegram_token'),
+            telegram_chat_id=config_data.get('telegram_chat_id'),
+            twilio_account_sid=config_data.get('twilio_account_sid'),
+            twilio_auth_token=config_data.get('twilio_auth_token'),
+            twilio_whatsapp_from=config_data.get('twilio_whatsapp_from'),
+            whatsapp_to=config_data.get('whatsapp_to')
+        )
+    else:
+        # Load from environment variables
+        return BotConfig(
+            github_token=os.getenv('GITHUB_TOKEN'),
+            github_owner=os.getenv('GITHUB_OWNER'),
+            github_repo=os.getenv('GITHUB_REPO'),
+            config_file=os.getenv('CONFIG_FILE', 'template.json'),
+            check_interval_minutes=int(os.getenv('CHECK_INTERVAL_MINUTES', '5')),
+            max_concurrent_tests=int(os.getenv('MAX_CONCURRENT_TESTS', '5')),
+            timeout_seconds=int(os.getenv('TIMEOUT_SECONDS', '10')),
+            send_only_failures=os.getenv('SEND_ONLY_FAILURES', 'false').lower() == 'true',
+            send_summary=os.getenv('SEND_SUMMARY', 'true').lower() == 'true',
+            telegram_token=os.getenv('TELEGRAM_TOKEN'),
+            telegram_chat_id=os.getenv('TELEGRAM_CHAT_ID'),
+            twilio_account_sid=os.getenv('TWILIO_ACCOUNT_SID'),
+            twilio_auth_token=os.getenv('TWILIO_AUTH_TOKEN'),
+            twilio_whatsapp_from=os.getenv('TWILIO_WHATSAPP_FROM'),
+            whatsapp_to=os.getenv('WHATSAPP_TO')
+        )
+
+def main():
+    """Main function to start the bot"""
+    try:
+        # Load configuration
+        config = load_bot_config()
+        
+        # Validate required config
+        if not all([config.github_token, config.github_owner, config.github_repo]):
+            logger.error("Missing required GitHub configuration!")
+            return
+        
+        # Create and start bot
+        bot = VPNBotChecker(config)
+        bot.start_scheduler()
+        
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Bot error: {str(e)}")
+
+if __name__ == "__main__":
+    main()
