@@ -356,9 +356,9 @@ def load_bot_config() -> BotConfig:
         )
     
     # Fallback to config file (for local development)
-    config_file = Path("bot_config_telegram_only.json")
+    config_file = Path("config.json")
     if config_file.exists():
-        logger.info("🔧 Loading configuration from bot_config_telegram_only.json")
+        logger.info("🔧 Loading configuration from config.json")
         with open(config_file, 'r') as f:
             config_data = json.load(f)
         
@@ -375,7 +375,7 @@ def load_bot_config() -> BotConfig:
             telegram_chat_id=config_data.get('telegram_chat_id')
         )
     else:
-        raise FileNotFoundError("❌ No configuration found. Please set environment variables or create bot_config_telegram_only.json")
+        raise FileNotFoundError("❌ No configuration found. Please set environment variables or create config.json")
 
 def main():
     """Main function to start the bot"""

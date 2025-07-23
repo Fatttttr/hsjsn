@@ -1,15 +1,21 @@
-# Bot Configuration (contains sensitive tokens)
-bot_config.json
+# Config dengan credentials
+config.json
 
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-env/
+*.so
+
+# Logs
+*.log
+
+# Virtual environments
 venv/
-ENV/
+env/
+.env
 
 # IDE
 .vscode/
@@ -20,15 +26,3 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Environment variables
-.env
-.env.local
-
-# Test artifacts
-test_results/
-coverage/
