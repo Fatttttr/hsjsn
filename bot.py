@@ -131,7 +131,7 @@ class TelegramVPNBot:
             logger.info(f"🧪 Testing {len(accounts)} accounts from {filename}...")
             
             # Test accounts for this file
-            results = await tester.test_accounts(accounts)
+            results = await tester.test_multiple_accounts(accounts)
             
             # Count results
             successful = len([r for r in results if r.is_working])
