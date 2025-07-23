@@ -1,0 +1,15 @@
+{
+  "github_token": "your_github_token_here",
+  "github_owner": "Fatttttr",
+  "github_repo": "fattt",
+  
+  "check_interval_minutes": 60,
+  "max_concurrent_tests": 3,
+  "timeout_seconds": 8,
+  
+  "send_only_failures": false,
+  "send_summary": true,
+  
+  "telegram_token": "your_telegram_bot_token",
+  "telegram_chat_id": "your_telegram_chat_id"
+}
