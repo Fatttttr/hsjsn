@@ -1,0 +1,10 @@
+{
+  "check_interval_minutes": 120,
+  "telegram_token": "your_telegram_bot_token",
+  "telegram_chat_id": "your_telegram_chat_id",
+  "server_id": null,
+  "alert_download_threshold": 10.0,
+  "alert_upload_threshold": 5.0,
+  "alert_ping_threshold": 100.0,
+  "save_history": true
+}
